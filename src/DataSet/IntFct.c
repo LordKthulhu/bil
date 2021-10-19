@@ -3,7 +3,7 @@
 #include <math.h>
 #include "Mry.h"
 #include "Message.h"
-#include "Tools/Math.h"
+#include "MMath.h"
 #include "ShapeFct.h"
 #include "IntFct.h"
 

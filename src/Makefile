@@ -115,8 +115,8 @@ ${LIBBILa}: ${SRCALL} ${OBJALL}
 
 ${LIBBILso}: ${SRCALL} ${OBJALL}
 	@echo "\nCreating the shared library "${LIBBILso}
-	${CCSO} ${OPTIM} -Wl,-soname=${LIBBILso} -o ${LIBBILso} ${OBJALL1}
-	
+	${CCSO} ${OPTIM} -Wl,-install_name,${LIBBILso} -o ${LIBBILso} ${OBJALL1} ${LFLAGS}
+
 
 
 #=======================================================================
@@ -158,7 +158,7 @@ ${DIRMODULEFILES}%.o: ${DIRMODULEFILES}%.cpp
 %.o: %.cpp
 	@echo "\nCompilation of the C++ source: "$<
 	${CPP} ${OPTIM} ${CFLAGS} -c $< -o $@
-	
+
 %.o: %.f
 	@echo "\nCompilation of the fortran source: "$<
 	${F77} ${OPTIM} ${FFLAGS} -c $< -o $@
@@ -341,4 +341,3 @@ test1:
 	@echo 'Object files'
 	@echo 'OBJCPP from SRCOTHERC = '${SRCOTHERC:%.cpp=%.o}
 	@echo 'OBJCPP from SRCOTHERC = '${filter %.o,${patsubst %.c,%.o,toto.cpp titi.c}}
-

@@ -5,7 +5,7 @@
 #include <ctype.h>
 #include "Message.h"
 #include "Mry.h"
-#include "String.h"
+#include "SString.h"
 #include "Fields.h"
 #include "Functions.h"
 #include "BCond.h"

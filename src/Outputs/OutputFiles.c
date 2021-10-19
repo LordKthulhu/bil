@@ -10,7 +10,7 @@
 #include "BilVersion.h"
 #include "TextFile.h"
 #include "Models.h"
-#include "String.h"
+#include "SString.h"
 #include "Mry.h"
 
 

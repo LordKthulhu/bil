@@ -4,7 +4,7 @@
 #include <string.h>
 #include <strings.h>
 #include <assert.h>
-#include "Math.h"
+#include "MMath.h"
 #include "Symmetry.h"
 #include "Elements.h"
 #include "Nodes.h"
@@ -18,7 +18,7 @@
 #include "Solutions.h"
 #include "Context.h"
 #include "TextFile.h"
-#include "String.h"
+#include "SString.h"
 #include "Mry.h"
 #include "Mesh.h"
 

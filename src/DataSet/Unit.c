@@ -5,7 +5,7 @@
 #include "DataFile.h"
 #include "InternationalSystemOfUnits.h"
 #include "Mry.h"
-#include "String.h"
+#include "SString.h"
 #include "Unit.h"
 
 

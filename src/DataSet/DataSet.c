@@ -16,7 +16,7 @@
 #include "Modules.h"
 #include "DataSet.h"
 #include "Units.h"
-#include "String.h"
+#include "SString.h"
 #include "Parser.h"
 
 

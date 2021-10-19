@@ -8,7 +8,7 @@
 #include <assert.h>
 
 #include "Message.h"
-#include "Tools/Math.h"
+#include "MMath.h"
 #include "Buffer.h"
 #include "Mry.h"
 #include "TextFile.h"

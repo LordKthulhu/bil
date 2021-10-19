@@ -1,13 +1,22 @@
 # OS
 #----
-UNAME = Linux
+UNAME := $(shell uname -s)
 
+COMPC := gcc
+COMPF := gfortran
+COMPLINK := g++
+
+ifeq ($(UNAME),Darwin)
+COMPC := gcc-9
+COMPF := gfortran-9
+COMPLINK := g++-9
+endif
 
 # Compilers (C++11 for variadic macros)
 #----------
-CC     := gcc -x c   -std=c11
-CPP    := gcc -x c++ -std=c++11
-F77    := gfortran -cpp
+CC     := ${COMPC} -x c   -std=c11
+CPP    := ${COMPC} -x c++ -std=c++11
+F77    := ${COMPF} -cpp
 LEX    := flex #-d
 YACC   := bison #-t
 
@@ -68,7 +77,7 @@ OPTIM  = -gdwarf-2 -g3 #-O2
 
 # Linker
 #-------
-LINKER = g++
+LINKER = ${COMPLINK}
 
 
 # Linker flags
@@ -91,6 +100,5 @@ RANLIB = ranlib
 
 
 # To create and install a shared library
-CCSO = gcc -shared
-LDCONFIG  = /sbin/ldconfig 
-
+CCSO = ${COMPC} -shared
+LDCONFIG  = /sbin/ldconfig

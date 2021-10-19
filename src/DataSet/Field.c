@@ -4,7 +4,7 @@
 #include "Message.h"
 #include "DataFile.h"
 #include "Mry.h"
-#include "String.h"
+#include "SString.h"
 #include "Field.h"
 
 /*

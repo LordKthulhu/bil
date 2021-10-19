@@ -7,7 +7,7 @@
 #include <stdarg.h>
 
 #include "Message.h"
-#include "Tools/Math.h"
+#include "MMath.h"
 #include "Curve.h"
 
 

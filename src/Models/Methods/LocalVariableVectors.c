@@ -6,7 +6,7 @@
 #include <strings.h>
 #include "LocalVariableVectors.h"
 #include "Message.h"
-#include "Tools/Math.h"
+#include "MMath.h"
 #include "Mry.h"
 
 
