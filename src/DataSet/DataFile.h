@@ -56,7 +56,7 @@ extern int*         (DataFile_ReadInversePermutationOfNodes)(DataFile_t*,int) ;
 
 
 
-#include "String.h"
+#include "SString.h"
 
 /* Tokens in file content */
 #define DataFile_FindToken(DF, ...) \

@@ -31,7 +31,7 @@ extern double*        (Elasticity_ComputeStressTensor)     (Elasticity_t*,const 
 #define Elasticity_MaxNbOfParameters      (8)
 
 
-#include "Tools/Math.h"
+#include "MMath.h"
 
 
 /* Isotropy */

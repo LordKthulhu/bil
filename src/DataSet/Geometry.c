@@ -8,7 +8,7 @@
 #include "Message.h"
 #include "Periodicities.h"
 #include "Mry.h"
-#include "String.h"
+#include "SString.h"
 
 
 /* Global functions */

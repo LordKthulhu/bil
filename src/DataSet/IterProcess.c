@@ -10,7 +10,7 @@
 #include "ObVals.h"
 #include "Solver.h"
 #include "Exception.h"
-#include "String.h"
+#include "SString.h"
 #include "Mry.h"
 
 

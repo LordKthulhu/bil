@@ -48,7 +48,7 @@ extern char*           (TextFile_StoreFileContent)(TextFile_t*) ;
         (!TextFile_Exists(TF))
 
 
-#include "String.h"
+#include "SString.h"
 
 #define TextFile_Scan(TF, ...) \
         String_Scan(TextFile_GetCurrentPositionInFileContent(TF),__VA_ARGS__)

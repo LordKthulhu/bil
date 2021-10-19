@@ -102,7 +102,7 @@ compile: make.inc version_init info_init lib
 link: make.inc
 	@echo "\nLinking with embedded location of shared libraries (rpath method), if any"
 	mkdir -p ${BIL_BINDIR}
-	${LINKER} ${OPTIM} ${BIL_SRCDIR}/Main/Main.o -L${BIL_LIBDIR} -Wl,-rpath=${BIL_LIBDIR} ${BIL_LIBS} -o ${BIL_BINDIR}/${BIL_EXE} ${LFLAGS}
+	${LINKER} ${OPTIM} ${BIL_SRCDIR}/Main/Main.o -L${BIL_LIBDIR} -Wl,-rpath,${BIL_LIBDIR} ${BIL_LIBS} -o ${BIL_BINDIR}/${BIL_EXE} ${LFLAGS}
 
 
 #=======================================================================
@@ -160,8 +160,8 @@ clean:
 clean-all: clean
 	rm -f ${BIL_BINDIR}/${BIL_EXE}
 	rm -f ${BIL_BINDIR}/*
-	rm -f ${BIL_VERSION_FILE} 
-	rm -f ${BIL_INFO_FILE} 
+	rm -f ${BIL_VERSION_FILE}
+	rm -f ${BIL_INFO_FILE}
 	rm -f ${BIL_LIB_FILE}
 	rm -f ${BIL_PATH_FILE}
 	cd doc && ${MAKE} clean-all
@@ -250,13 +250,13 @@ base:
 # Target rules for archiving
 
 targz: tar zip
-	
+
 tar: clean-all
 	cd .. && tar cvf bil-${BIL_VERSION}-src.tar ${notdir ${BIL_PATH}}
 
 zip:
 	cd .. && gzip bil-${BIL_VERSION}-src.tar
-	
+
 
 #=======================================================================
 # Target rules for githelp
@@ -301,7 +301,7 @@ githelp:
 	@( echo "  listing the available tags: git tag" )
 	@( echo "  creating annotated tags: git tag -a <version> -m <message>" )
 	@( echo "  tagging later: git tag -a <version> <checksum>" )
-	
+
 
 #=======================================================================
 # Target rules for tests
@@ -312,7 +312,7 @@ test:
 	@( echo "Last part of BIL_PATH = ${notdir ${BIL_PATH}}" )
 	@( echo "BIL_COPYRIGHT = ${BIL_COPYRIGHT}" )
 	@( echo "BIL_LIBS = ${BIL_LIBS}" )
-	
+
 
 #=======================================================================
 # Target rules for memcheck through valgrind

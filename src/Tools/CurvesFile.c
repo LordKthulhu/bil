@@ -7,10 +7,10 @@
 #include <stdarg.h>
 
 #include "Message.h"
-#include "Tools/Math.h"
+#include "MMath.h"
 #include "Buffer.h"
 #include "Curves.h"
-#include "String.h"
+#include "SString.h"
 #include "CurvesFile.h"
 #include "InternationalSystemOfUnits.h"
 

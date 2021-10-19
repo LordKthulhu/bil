@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <ctype.h>
-#include "String.h"
-#include "Math.h"
+#include "SString.h"
+#include "MMath.h"
 #include "Message.h"
 #include "Mry.h"
 #include "Model.h"

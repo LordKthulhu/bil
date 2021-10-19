@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../Common/Message.h"
-#include "../Tools/Math.h"
+#include "MMath.h"
 #include "../DataSet/DataSet.h"
 #include "Parser.tab.h"
 

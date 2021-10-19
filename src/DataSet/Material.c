@@ -9,7 +9,7 @@
 #include "Material.h"
 #include "Curves.h"
 #include "Mry.h"
-#include "String.h"
+#include "SString.h"
 
 
 /* Extern functions */

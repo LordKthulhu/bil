@@ -5,7 +5,7 @@
 #include "Message.h"
 #include "Context.h"
 #include "Exception.h"
-#include "Tools/Math.h"
+#include "MMath.h"
 #include "LibFEM.h"
 
 #endif

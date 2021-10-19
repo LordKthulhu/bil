@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include "Message.h"
 #include "DataFile.h"
-#include "String.h"
+#include "SString.h"
 #include "Mry.h"
 #include "Model.h"
 #include "Element.h"

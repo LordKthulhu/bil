@@ -3,7 +3,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include "Message.h"
-#include "String.h"
+#include "SString.h"
 
 
 
