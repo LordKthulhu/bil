@@ -18,6 +18,7 @@
 #include <string.h>
 #include <strings.h>
 #include <assert.h>
+#include <omp.h>
 
 
 //static FEM_t* instancefem = NULL ;
@@ -36,49 +37,49 @@ static void    FEM_CheckNumberingOfOverlappingNodes(Element_t*,const int) ;
 #define FEM_ComputeJacobianDeterminant   Element_ComputeJacobianDeterminant
 #define FEM_ComputeInverseJacobianMatrix Element_ComputeInverseJacobianMatrix
 
-/* 
-   Extern Functions 
+/*
+   Extern Functions
 */
 FEM_t* FEM_Create(void)
 {
   FEM_t*  fem    = (FEM_t*) Mry_New(FEM_t) ;
-  
-  
+
+
   /* Space allocation for output */
   {
     int nn = Element_MaxNbOfNodes ;
     int neq = Model_MaxNbOfEquations ;
     int ndof = nn*neq ;
     double* output = (double*) Mry_New(double[ndof*ndof]) ;
-    
+
     FEM_GetOutput(fem) = output ;
   }
-  
-  
+
+
   /* Space allocation for input */
   {
     int np = IntFct_MaxNbOfIntPoints ;
     double* input = (double*) Mry_New(double[np*FEM_MaxShift]) ;
-    
+
     FEM_GetInput(fem) = input ;
   }
-  
-  
+
+
   /* Space allocation for pintfct */
   {
     IntFct_t** pintfct = (IntFct_t**) Mry_New(IntFct_t*[IntFcts_MaxNbOfIntFcts]) ;
-    
+
     FEM_GetPointerToIntFct(fem) = pintfct ;
   }
-  
-  
+
+
   /* Space allocation for buffer */
   {
     Buffer_t* buf = Buffer_Create(FEM_SizeOfBuffer) ;
-    
+
     FEM_GetBuffer(fem) = buf ;
   }
-  
+
   return(fem) ;
 }
 
@@ -88,7 +89,7 @@ void FEM_Delete(void* self)
 {
   FEM_t** pfem = (FEM_t**) self ;
   FEM_t*   fem = *pfem ;
-  
+
   free(FEM_GetOutput(fem)) ;
   free(FEM_GetInput(fem)) ;
   free(FEM_GetPointerToIntFct(fem)) ;
@@ -104,11 +105,11 @@ FEM_t* FEM_GetInstance0(Element_t* el)
   if(!instancefem) {
     instancefem = FEM_Create() ;
   }
-  
+
   FEM_GetElement(instancefem) = el ;
-  
+
   FEM_FreeBuffer(instancefem) ;
-  
+
   return(instancefem) ;
 }
 #endif
@@ -118,24 +119,25 @@ FEM_t* FEM_GetInstance0(Element_t* el)
 FEM_t*  (FEM_GetInstance)(Element_t* el)
 {
   GenericData_t* gdat = Session_FindGenericData(FEM_t,"FEM") ;
-  
+
   if(!gdat) {
+    printf("henlo\n") ;
     FEM_t* fem = FEM_Create() ;
-    
+
     gdat = GenericData_Create(1,fem,FEM_t,"FEM") ;
-    
+
     Session_AddGenericData(gdat) ;
-    
+
     assert(gdat == Session_FindGenericData(FEM_t,"FEM")) ;
   }
-  
+
   {
     FEM_t* fem = (FEM_t*) GenericData_GetData(gdat) ;
-  
+
     FEM_GetElement(fem) = el ;
-  
+
     FEM_FreeBuffer(fem) ;
-  
+
     return(fem) ;
   }
 }
@@ -164,26 +166,26 @@ double*  FEM_ComputeStiffnessMatrix(FEM_t* fem,IntFct_t* fi,const double* c,cons
   double* kr = (double*) FEM_AllocateInBuffer(fem,SizeNeeded) ;
   double* x[Element_MaxNbOfNodes] ;
   double zero = 0. ;
-  
+
   /* Initialization */
   {
     int i ;
-    
+
     for(i = 0 ; i < ndof*ndof ; i++) kr[i] = zero ;
   }
-  
+
   if(Element_IsSubmanifold(el)) {
     arret("FEM_ComputeStiffnessMatrix") ;
   }
-  
+
   {
     int i ;
-    
+
     for(i = 0 ; i < nn ; i++) {
       x[i] = Element_GetNodeCoordinate(el,i) ;
     }
   }
-  
+
 
 
   /* Interface elements */
@@ -192,7 +194,7 @@ double*  FEM_ComputeStiffnessMatrix(FEM_t* fem,IntFct_t* fi,const double* c,cons
       /* Assuming that the numbering of the element is formed with the nf first nodes  */
       if(nn > nf) {
         int p ;
-      
+
         /* Check the numbering */
         FEM_CheckNumberingOfOverlappingNodes(el,nf) ;
 
@@ -208,34 +210,34 @@ double*  FEM_ComputeStiffnessMatrix(FEM_t* fem,IntFct_t* fi,const double* c,cons
           if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
             arret("FEM_ComputeStiffnessMatrix: To be improved") ;
           }
-      
+
           /* */
           #define R(i,k)   r[(i)*3 + (k)]
           #define NORM(i)  (norm[i])
-        
+
           for(i = 0 ; i < 3 ; i++) for(k = 0 ; k < 3 ; k++) {
-          
+
             R(i,k) = 0 ;
 
             for(j = 0 ; j < 3 ; j++) for(l = 0 ; l < 3 ; l++) {
               double cijkl = C(i,j,k,l) + C(j,i,k,l) + C(i,j,l,k) + C(j,i,l,k) ;
-            
+
               R(i,k) += NORM(j) * cijkl * NORM(l) ;
             }
-          
+
             R(i,k) *= 0.25 ;
           }
-        
+
           #undef NORM
 
           /* KR(j,i,l,k) = H(j) * R(i,k) * H(l) */
           for(j = 0 ; j < nf ; j++) for(i = 0 ; i < dim ; i++) {
             int jj = Element_OverlappingNode(el,j) ;
-          
+
             for(l = 0 ; l < nf ; l++) for(k = 0 ; k < dim ; k++) {
               double k_jilk = a * h[j] * R(i,k) * h[l] ;
               int ll = Element_OverlappingNode(el,l) ;
-          
+
               KR(j*dim  + i,l*dim  + k) +=   k_jilk ;
               KR(jj*dim + i,l*dim  + k) += - k_jilk ;
               KR(j*dim  + i,ll*dim + k) += - k_jilk ;
@@ -245,17 +247,17 @@ double*  FEM_ComputeStiffnessMatrix(FEM_t* fem,IntFct_t* fi,const double* c,cons
 
           #undef R
         }
-      
+
         return(kr) ;
       }
     }
   }
 
-  
+
   /* Loop on integration points */
   {
     int    p ;
-    
+
     for(p = 0 ; p < np ; p++ , c += dec) {
       double* h  = IntFct_GetFunctionAtPoint(fi,p) ;
       double* dh = IntFct_GetFunctionGradientAtPoint(fi,p) ;
@@ -265,17 +267,17 @@ double*  FEM_ComputeStiffnessMatrix(FEM_t* fem,IntFct_t* fi,const double* c,cons
       double jcj[3][3][3][3],jc[3][3],cj[3][3] ;
       double radius = zero ;
       int    i,j,k,l,r,s ;
-    
+
       /* The radius in axisymmetrical or spherical case */
       if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
-        
+
         for(i = 0 ; i < nf ; i++) radius += h[i]*x[i][0] ;
-        
+
         a *= 2*M_PI*radius ;
-        
+
         if(Symmetry_IsSpherical(sym)) a *= 2*radius ;
       }
-    
+
       /* JCJ(r,i,k,s) = J(r,j) * C(i,j,k,l) * J(s,l) */
       for(r = 0 ; r < dim_h ; r++) for(i = 0 ; i < dim ; i++) for(k = 0 ; k < dim ; k++) for(s = 0 ; s < dim_h ; s++) {
         jcj[r][i][k][s] = zero ;
@@ -283,14 +285,14 @@ double*  FEM_ComputeStiffnessMatrix(FEM_t* fem,IntFct_t* fi,const double* c,cons
           jcj[r][i][k][s] += CAJ(r,j) * C(i,j,k,l) * CAJ(s,l) ;
         }
       }
-    
+
       /* KR(j,i,l,k) = DH(j,r) * JCJ(r,i,k,s) * DH(l,s) */
       for(j = 0 ; j < nn ; j++) for(i = 0 ; i < dim ; i++) for(l = 0 ; l < nn ; l++) for(k = 0 ; k < dim ; k++) {
         for(r = 0 ; r < dim_h ; r++) for(s = 0 ; s < dim_h ; s++) {
           KR(j*dim+i,l*dim+k) += a * DH(j,r) * jcj[r][i][k][s] * DH(l,s) ;
         }
       }
-    
+
       /* Axisymmmetrical case: 3 terms */
       if(Symmetry_IsCylindrical(sym)) {
         /* 1.a JC(r,i) = J(r,j) * C(i,j,theta,theta) */
@@ -298,57 +300,57 @@ double*  FEM_ComputeStiffnessMatrix(FEM_t* fem,IntFct_t* fi,const double* c,cons
           jc[r][i] = zero ;
           for(j = 0 ; j < dim ; j++) jc[r][i] += CAJ(r,j) * C(i,j,2,2) ;
         }
-        
+
         /* 1.b KR(j,i,l,0) = DH(j,r) * JC(r,i) * H(l)/r */
         for(j = 0 ; j < nn ; j++) for(i = 0 ; i < dim ; i++) for(l = 0 ; l < nn ; l++) for(r = 0 ; r < dim_h ; r++) {
           KR(j*dim+i,l*dim) += a * DH(j,r) * jc[r][i] * h[l]/radius ;
         }
-        
+
         /* 2.a CJ(k,s) = C(theta,theta,k,l) * J(s,l) */
         for(k = 0 ; k < dim ; k++) for(s = 0 ; s < dim_h ; s++) {
-          cj[k][s] = zero ; 
+          cj[k][s] = zero ;
           for(l = 0 ; l < dim ; l++) cj[k][s] += C(2,2,k,l) * CAJ(s,l) ;
         }
-        
+
         /* 2.b KR(j,0,l,k) = H(j)/r * CJ(k,s) * DH(l,s) */
         for(j = 0 ; j < nn ; j++) for(l = 0 ; l < nn;l++) for(k = 0 ; k < dim ; k++) for(s = 0 ; s < dim_h ; s++) {
           KR(j*dim,l*dim+k) += a * h[j]/radius * cj[k][s] * DH(l,s) ;
         }
-        
+
         /* 3.  KR(j,0,l,0) = H(j)/r * C(theta,theta,theta,theta) * H(l)/r */
         for(j = 0 ; j < nn ; j++) for(l = 0 ; l < nn ; l++) {
           KR(j*dim,l*dim) += a * h[j]/radius * C(2,2,2,2) * h[l]/radius ;
         }
-      
+
       /* Spherical case: 3 terms */
       } else if(Symmetry_IsSpherical(sym)) {
-        
+
         /* 1.a JC(r,i) = J(r,j) * (C(i,j,theta,theta) + C(i,j,phi,phi)) */
         for(r = 0 ; r < dim_h ; r++) for(i = 0 ; i < dim ; i++) {
           jc[r][i] = zero ;
           for(j = 0 ; j < dim ; j++) jc[r][i] += CAJ(r,j) * (C(i,j,1,1) + C(i,j,2,2)) ;
         }
-        
+
         /* 1.b KR(j,i,l,0) = DH(j,r) * JC(r,i) * H(l)/r */
         for(j = 0 ; j < nn ; j++) for(i = 0 ; i < dim ; i++) for(l = 0 ; l < nn ; l++) for(r = 0 ; r < dim_h ; r++) {
           KR(j*dim+i,l*dim) += a * DH(j,r) * jc[r][i] * h[l]/radius ;
         }
-        
+
         /* 2.a CJ(k,s) = (C(phi,phi,k,l) + C(theta,theta,k,l)) * J(s,l) */
         for(k = 0 ; k < dim ; k++) for(s = 0 ; s < dim_h ; s++) {
-          cj[k][s] = zero ; 
+          cj[k][s] = zero ;
           for(l = 0 ; l < dim ; l++) cj[k][s] += (C(1,1,k,l) + C(2,2,k,l)) * CAJ(s,l) ;
         }
-        
+
         /* 2.b KR(j,0,l,k) = H(j)/r * CJ(k,s) * DH(l,s) */
         for(j = 0 ; j < nn ; j++) for(l = 0 ; l < nn ; l++) for(k = 0 ; k < dim ; k++) for(s = 0 ; s < dim_h ; s++) {
           KR(j*dim,l*dim+k) += a * h[j]/radius * cj[k][s] * DH(l,s) ;
         }
-        
+
         /* 3.  KR(j,0,l,0) = H(j)/r * (C(phi,phi,phi,phi) + C(theta,theta,phi,phi) + C(phi,phi,theta,theta) + C(theta,theta,theta,theta)) * H(l)/r */
         {
           double cc = C(1,1,1,1) + C(1,1,2,2) + C(2,2,1,1) + C(2,2,2,2) ;
-          
+
           for(j = 0 ; j < nn ; j++) for(l = 0 ; l < nn ; l++) {
             KR(j*dim,l*dim) += a * h[j]/radius * cc * h[l]/radius ;
           }
@@ -356,7 +358,7 @@ double*  FEM_ComputeStiffnessMatrix(FEM_t* fem,IntFct_t* fi,const double* c,cons
       }
     }
   }
-  
+
   return(kr) ;
 #undef KR
 #undef DH
@@ -367,7 +369,7 @@ double*  FEM_ComputeStiffnessMatrix(FEM_t* fem,IntFct_t* fi,const double* c,cons
 
 
 double*  FEM_ComputeBiotMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int dec)
-/** Return a pointer on a Biot-like coupling matrix (Ndof*N) 
+/** Return a pointer on a Biot-like coupling matrix (Ndof*N)
  *  with Ndof = N * dim and N = nb of nodes */
 {
 #define KC(i,j)     (kc[(i)*nn + (j)])
@@ -389,26 +391,26 @@ double*  FEM_ComputeBiotMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int
   double* kc = (double*) FEM_AllocateInBuffer(fem,SizeNeeded) ;
   double* x[Element_MaxNbOfNodes] ;
   double zero = 0. ;
-  
+
   /* Initialisation */
   {
     int i ;
-    
+
     for(i = 0 ; i < nrow*ncol ; i++) kc[i] = zero ;
   }
-  
+
   if(Element_IsSubmanifold(el)) {
     arret("FEM_ComputeBiotMatrix") ;
   }
-  
+
   {
     int i ;
-    
+
     for(i = 0 ; i < nn ; i++) {
       x[i] = Element_GetNodeCoordinate(el,i) ;
     }
   }
-  
+
 
   /* Interface elements */
   if(Element_HasZeroThickness(el)) {
@@ -416,7 +418,7 @@ double*  FEM_ComputeBiotMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int
       /* Assuming that the numbering of the element is formed with the nf first nodes  */
       if(nn > nf) {
         int p ;
-      
+
         /* Check the numbering */
         FEM_CheckNumberingOfOverlappingNodes(el,nf) ;
 
@@ -432,32 +434,32 @@ double*  FEM_ComputeBiotMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int
           if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
             arret("FEM_ComputeBiotMatrix: To be improved") ;
           }
-      
-          /* 
+
+          /*
            * Pay attention to the orientation of the normal:
            * the normal N is oriented from the opposite face
            * to the main face of the element, i.e. from ii to i */
           #define R(i)     (r[i])
           #define NORM(i)  (norm[i])
-        
+
           for(i = 0 ; i < 3 ; i++) {
             R(i) = 0 ;
             for(j = 0 ; j < 3 ; j++) {
               R(i) += C(i,j) * NORM(j) ;
             }
           }
-        
+
           #undef NORM
 
           /* KR(j,i,l) = H(j) * R(i) * H(l) */
           for(j = 0 ; j < nf ; j++) {
             int jj = Element_OverlappingNode(el,j) ;
-            
+
             for(i = 0 ; i < dim ; i++) {
               for(l = 0 ; l < nf ; l++) {
                 double k_jil = a * h[j] * R(i) * h[l] ;
                 int ll = Element_OverlappingNode(el,l) ;
-                
+
                 KC(j*dim  + i,l ) +=   0.5 * k_jil ;
                 KC(jj*dim + i,l ) += - 0.5 * k_jil ;
                 KC(j*dim  + i,ll) +=   0.5 * k_jil ;
@@ -468,16 +470,16 @@ double*  FEM_ComputeBiotMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int
 
           #undef R
         }
-      
+
         return(kc) ;
       }
     }
   }
-  
+
   /* boucle sur les points d'integration */
   {
     int p ;
-    
+
     for(p = 0 ; p < np ; p++ , c += dec) {
       double* h  = IntFct_GetFunctionAtPoint(fi,p) ;
       double* dh = IntFct_GetFunctionGradientAtPoint(fi,p) ;
@@ -487,7 +489,7 @@ double*  FEM_ComputeBiotMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int
       double jc[3][3] ;
       double rayon ;
       int    i,j,k,l ;
-    
+
       /* cas axisymetrique ou spherique */
       if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
         rayon = zero ;
@@ -495,7 +497,7 @@ double*  FEM_ComputeBiotMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int
         a *= 2*M_PI*rayon ;
         if(Symmetry_IsSpherical(sym)) a *= 2*rayon ;
       }
-    
+
       /* JC(k,i) = J(k,j)*C(j,i) */
       for(k = 0 ; k < dim_h ; k++) for(i = 0 ; i < dim ; i++) {
         jc[k][i] = zero ;
@@ -520,9 +522,9 @@ double*  FEM_ComputeBiotMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int
       }
     }
   }
-  
+
   return(kc) ;
-  
+
 #undef KC
 #undef DH
 #undef C
@@ -533,7 +535,7 @@ double*  FEM_ComputeBiotMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int
 
 
 double* FEM_ComputeMassMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int dec)
-/** Return a pointer on a FE mass matrix (N*N) 
+/** Return a pointer on a FE mass matrix (N*N)
  *  with N = nb of nodes*/
 {
 #define KM(i,j)     (km[(i)*nn + (j)])
@@ -548,26 +550,26 @@ double* FEM_ComputeMassMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int 
   size_t SizeNeeded = nn*nn*(sizeof(double)) ;
   double* km = (double*) FEM_AllocateInBuffer(fem,SizeNeeded) ;
   double* x[Element_MaxNbOfNodes] ;
-  
+
   /* Initialization */
   {
     int i ;
-    
+
     for(i = 0 ; i < nn*nn ; i++) {
       km[i] = 0 ;
     }
   }
-  
+
   //if(Element_IsSubmanifold(el)) arret("FEM_ComputeMassMatrix") ;
 
   {
     int i ;
-    
+
     for(i = 0 ; i < nn ; i++) {
       x[i] = Element_GetNodeCoordinate(el,i) ;
     }
   }
-  
+
 
 
   /* Interface elements */
@@ -576,36 +578,36 @@ double* FEM_ComputeMassMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int 
       /* Assuming that the numbering of the element is formed with the nf first nodes  */
       if(nn > nf) {
         int p ;
-      
+
         /* Check the numbering */
         FEM_CheckNumberingOfOverlappingNodes(el,nf) ;
-    
+
         for(p = 0 ; p < np ; p++ , c += dec) {
           double* h  = IntFct_GetFunctionAtPoint(fi,p) ;
           double* dh = IntFct_GetFunctionGradientAtPoint(fi,p) ;
           double d   = FEM_ComputeJacobianDeterminant(el,dh,nf,dim_h) ;
           double a   = weight[p]*c[0]*d ;
           int    i ;
-    
+
           /* axisymetrical or spherical cases */
           if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
             double rayon = 0 ;
-            
+
             arret("FEM_ComputeMassMatrix: To be improved") ;
-        
+
             for(i = 0 ; i < nf ; i++) rayon += h[i]*x[i][0] ;
             a *= 2*M_PI*rayon ;
             if(Symmetry_IsSpherical(sym)) a *= 2*rayon ;
           }
-    
+
           for(i = 0 ; i < nf ; i++) {
             int ii = Element_OverlappingNode(el,i) ;
             int j ;
-        
+
             for(j = 0 ; j < nf ; j++) {
               int jj = Element_OverlappingNode(el,j) ;
               double kij = a * h[i] * h[j] ;
-              
+
               KM(i ,j ) += 0.25 * kij ;
               KM(ii,j ) += 0.25 * kij ;
               KM(i ,jj) += 0.25 * kij ;
@@ -613,13 +615,13 @@ double* FEM_ComputeMassMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int 
             }
           }
         }
-      
+
         return(km) ;
       }
     }
   }
-  
-  
+
+
   /* 0D */
   if(dim_h == 0) {
     if(nn == 1) {
@@ -633,35 +635,35 @@ double* FEM_ComputeMassMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int 
   /* Regular element */
   {
     int p ;
-    
+
     for(p = 0 ; p < np ; p++ , c += dec) {
       double* h  = IntFct_GetFunctionAtPoint(fi,p) ;
       double* dh = IntFct_GetFunctionGradientAtPoint(fi,p) ;
       double d   = FEM_ComputeJacobianDeterminant(el,dh,nf,dim_h) ;
       double a   = weight[p]*c[0]*d ;
       int    i ;
-    
+
       /* axisymetrical or spherical cases */
       if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
         double rayon = 0 ;
-        
+
         for(i = 0 ; i < nf ; i++) rayon += h[i]*x[i][0] ;
         a *= 2*M_PI*rayon ;
         if(Symmetry_IsSpherical(sym)) a *= 2*rayon ;
       }
-    
+
       for(i = 0 ; i < nf ; i++) {
         int j ;
-        
+
         for(j = 0 ; j < nf ; j++) {
           KM(i,j) += a*h[i]*h[j] ;
         }
       }
     }
   }
-  
+
   return(km) ;
-  
+
 #undef KM
 }
 
@@ -670,7 +672,7 @@ double* FEM_ComputeMassMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int 
 
 
 double*  FEM_ComputeConductionMatrix(FEM_t* fem,IntFct_t* fi,const double* c,const int dec)
-/** Return a pointer on a FE conduction matrix (N*N) 
+/** Return a pointer on a FE conduction matrix (N*N)
  *  with N = nb of nodes */
 {
 #define KC(i,j)     (kc[(i)*nn + (j)])
@@ -689,26 +691,26 @@ double*  FEM_ComputeConductionMatrix(FEM_t* fem,IntFct_t* fi,const double* c,con
   size_t SizeNeeded = nn*nn*(sizeof(double)) ;
   double* kc = (double*) FEM_AllocateInBuffer(fem,SizeNeeded) ;
   double* x[Element_MaxNbOfNodes] ;
-  
+
   /* Initialization */
   {
     int i ;
-    
+
     for(i = 0 ; i < nn*nn ; i++) {
       kc[i] = 0 ;
     }
   }
-  
+
   //if(Element_IsSubmanifold(el)) arret("FEM_ComputeConductionMatrix") ;
-  
+
   {
     int i ;
-    
+
     for(i = 0 ; i < nn ; i++) {
       x[i] = Element_GetNodeCoordinate(el,i) ;
     }
   }
-  
+
 
 
   /* Interface elements */
@@ -717,10 +719,10 @@ double*  FEM_ComputeConductionMatrix(FEM_t* fem,IntFct_t* fi,const double* c,con
       /* Assuming that the numbering of the element is formed with the nf first nodes  */
       if(nn > nf) {
         int p ;
-      
+
         /* Check the numbering */
         FEM_CheckNumberingOfOverlappingNodes(el,nf) ;
-    
+
         for(p = 0 ; p < np ; p++ , c += dec) {
           double* h  = IntFct_GetFunctionAtPoint(fi,p) ;
           double* dh = IntFct_GetFunctionGradientAtPoint(fi,p) ;
@@ -729,18 +731,18 @@ double*  FEM_ComputeConductionMatrix(FEM_t* fem,IntFct_t* fi,const double* c,con
           double* caj = FEM_ComputeInverseJacobianMatrix(el,dh,nf,dim_h) ;
           double jcj[3][3] ;
           int    i,j,k,l ;
-    
+
           /* axisymetrical or spherical cases */
           if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
             double rayon = 0 ;
-            
+
             arret("FEM_ComputeConductionMatrix: To be improved") ;
-        
+
             for(i = 0 ; i < nf ; i++) rayon += h[i]*x[i][0] ;
             a *= 2*M_PI*rayon ;
             if(Symmetry_IsSpherical(sym)) a *= 2*rayon ;
           }
-    
+
           /* jcj = J(i,k)*C(k,l)*J(j,l) */
           for(i = 0 ; i < dim_h ; i++) for(j = 0 ; j < dim_h ; j++) {
             jcj[i][j] = 0 ;
@@ -748,17 +750,17 @@ double*  FEM_ComputeConductionMatrix(FEM_t* fem,IntFct_t* fi,const double* c,con
               jcj[i][j] += CAJ(i,k)*C(k,l)*CAJ(j,l) ;
             }
           }
-      
+
           /* KC(i,j) = DH(i,k)*JCJ(k,l)*DH(j,l) */
           for(i = 0 ; i < nf ; i++) {
             int ii = Element_OverlappingNode(el,i) ;
-            
+
             for(j = 0 ; j < nf ; j++) {
               int jj = Element_OverlappingNode(el,j) ;
-            
+
               for(k = 0 ; k < dim_h ; k++) for(l = 0 ; l < dim_h ; l++) {
                 double kcij = a * DH(i,k) * jcj[k][l] * DH(j,l) ;
-                
+
                 KC(i ,j ) += 0.25 * kcij ;
                 KC(ii,j ) += 0.25 * kcij ;
                 KC(i ,jj) += 0.25 * kcij ;
@@ -767,16 +769,16 @@ double*  FEM_ComputeConductionMatrix(FEM_t* fem,IntFct_t* fi,const double* c,con
             }
           }
         }
-      
+
         return(kc) ;
       }
     }
   }
-  
+
   /* Loop on integration points */
   {
     int p ;
-    
+
     for(p = 0 ; p < np ; p++ , c += dec) {
       double* h  = IntFct_GetFunctionAtPoint(fi,p) ;
       double* dh = IntFct_GetFunctionGradientAtPoint(fi,p) ;
@@ -785,16 +787,16 @@ double*  FEM_ComputeConductionMatrix(FEM_t* fem,IntFct_t* fi,const double* c,con
       double* caj = FEM_ComputeInverseJacobianMatrix(el,dh,nf,dim_h) ;
       double jcj[3][3] ;
       int    i,j,k,l ;
-    
+
       /* axisymetrical or spherical cases */
       if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
         double rayon = 0 ;
-        
+
         for(i = 0 ; i < nf ; i++) rayon += h[i]*x[i][0] ;
         a *= 2*M_PI*rayon ;
         if(Symmetry_IsSpherical(sym)) a *= 2*rayon ;
       }
-    
+
       /* jcj = J(i,k)*C(k,l)*J(j,l) */
       for(i = 0 ; i < dim_h ; i++) for(j = 0 ; j < dim_h ; j++) {
         jcj[i][j] = 0 ;
@@ -802,7 +804,7 @@ double*  FEM_ComputeConductionMatrix(FEM_t* fem,IntFct_t* fi,const double* c,con
           jcj[i][j] += CAJ(i,k)*C(k,l)*CAJ(j,l) ;
         }
       }
-      
+
       /* KC(i,j) = DH(i,k)*JCJ(k,l)*DH(j,l) */
       for(i = 0 ; i < nf ; i++) for(j = 0 ; j < nf ; j++) {
         for(k = 0 ; k < dim_h ; k++) for(l = 0 ; l < dim_h ; l++) {
@@ -811,7 +813,7 @@ double*  FEM_ComputeConductionMatrix(FEM_t* fem,IntFct_t* fi,const double* c,con
       }
     }
   }
-  
+
   return(kc) ;
 
 #undef KC
@@ -824,32 +826,32 @@ double*  FEM_ComputeConductionMatrix(FEM_t* fem,IntFct_t* fi,const double* c,con
 
 double*  FEM_ComputePoroelasticMatrix6(FEM_t* fem,IntFct_t* fi,const double* c,const int dec,const int n_dif,const int idis)
 /** Return a pointer on a FE poroelastic matrix (Ndof x Ndof).
- * 
+ *
  *  Ndof = nb of degrees of freedom (= NN*Neq)
- *  NN   = nb of nodes 
+ *  NN   = nb of nodes
  *  Neq  = nb of equations (= Dim + n_dif)
  *  Dim  = dimension of the problem
- * 
+ *
  *  The inputs are:
- * 
+ *
  *  n_dif = nb of Biot-like coupling terms (pressure, temperature, etc...)
- * 
+ *
  *  idis = position index of the first displacement in the unknown vector
- * 
+ *
  *  c = the entry matrix which should be given in the following order:
- * 
+ *
  *  K0 to Kn then A0 to An etc.. with n = n_dif:
- * 
- *  | K0(9x9) K1(9x1) K2(9x1) ... | 
- *  | A0(1x9) A1(1x1) A2(1x1) ... | 
- *  | B0(1x9) B1(1x1) B2(1x1) ... | 
+ *
+ *  | K0(9x9) K1(9x1) K2(9x1) ... |
+ *  | A0(1x9) A1(1x1) A2(1x1) ... |
+ *  | B0(1x9) B1(1x1) B2(1x1) ... |
  *  | ........................... |
- * 
+ *
  *   K0    = Stiffness matrix
  *   Kn    = Mechanic-hydraulic coupling terms
  *   A0,B0 = Hydraulic-mechanic coupling terms
  *   Ai,Bj = Hydraulic terms
- * 
+ *
  *  The outputs is provided in an order depending on "idis".
  *  The first displacement unknown U1 will be positionned at "idis".
  *  (0  ... idis ... Neq-1)
@@ -873,92 +875,92 @@ double*  FEM_ComputePoroelasticMatrix6(FEM_t* fem,IntFct_t* fi,const double* c,c
   double* k = (double*) FEM_AllocateInBuffer(fem,SizeNeeded) ;
   int    i,n,m ;
   double zero = 0. ;
-  
+
   /* Initialization */
   for(i = 0 ; i < ndof*ndof ; i++) k[i] = zero ;
-  
-  
+
+
   if(Element_IsSubmanifold(el)) {
     arret("FEM_ComputePoroelasticMatrix") ;
   }
 
-  /* 
+  /*
   ** 1.  Mechanics
   */
   /* 1.1 Elasticity */
   {
     double* kr = FEM_ComputeStiffnessMatrix(fem,fi,c,dec) ;
-    
+
     #define KR(i,j)     (kr[(i)*nn*dim + (j)])
-    
+
     for(n = 0 ; n < nn ; n++) for(m = 0 ; m < nn ; m++) {
       int j ;
-      
+
       for(i = 0 ; i < dim ; i++) for(j = 0 ; j < dim ; j++) {
         K(E_Mec + i + n*neq,I_U + j + m*neq) = KR(i + n*dim,j + m*dim) ;
       }
     }
-    
+
     #undef KR
   }
-  
+
   /* 1.2 Biot-like coupling terms */
   for(i = 0 ; i < n_dif ; i++) {
     int I_h = I_H(i) ;
     const double* c1 = c + 81 +i*9 ;
     double* kb = FEM_ComputeBiotMatrix(fem,fi,c1,dec) ;
-    
+
     #define KB(i,j)     (kb[(i)*nn + (j)])
-    
+
     for(n = 0 ; n < nn ; n++) for(m = 0 ; m < nn ; m++) {
       int j ;
-      
+
       for(j = 0 ; j < dim ; j++) {
         K(E_Mec + j + n*neq,I_h + m*neq) = KB(j + n*dim,m) ;
       }
     }
-    
+
     #undef KB
   }
-  
+
 
   /* 2. Hydraulic equations */
   for(i = 0 ; i < n_dif ; i++) {
     int E_h = E_Hyd(i) ;
     int j ;
-    
+
     /* 2.1 Coupling terms */
     {
       const double* c1 = c + 81 + n_dif*9 + i*(9 + n_dif) ;
       double* kb = FEM_ComputeBiotMatrix(fem,fi,c1,dec) ;
-    
+
       #define KB(i,j)     (kb[(i)*nn + (j)])
-    
+
       for(n = 0 ; n < nn ; n++) for(m = 0 ; m < nn ; m++) {
         for(j = 0 ; j < dim ; j++) {
           K(E_h + m*neq,I_U + j + n*neq) = KB(j + n*dim,m) ;
         }
       }
-    
+
       #undef KB
     }
-    
+
     /* 2.2 Accumulations */
     for(j = 0 ; j < n_dif ; j++) {
       int I_h = I_H(j) ;
       const double* c2 = c + 81 + n_dif*9 + i*(9 + n_dif) + 9 + j ;
       double* ka = FEM_ComputeMassMatrix(fem,fi,c2,dec) ;
-    
+
       #define KA(i,j)     (ka[(i)*nn + (j)])
-      
+
       for(n = 0 ; n < nn ; n++) for(m = 0 ; m < nn ; m++) {
         K(E_h + n*neq,I_h + m*neq) = KA(n,m) ;
       }
-    
+
       #undef KA
     }
   }
-  
+
   return(k) ;
 
 #undef K
@@ -1023,7 +1025,7 @@ void FEM_TransformMatrixFromDegree2IntoDegree1(FEM_t* fem,const int inc,const in
       K(ilin,icol) = 0. ;
     }
   }
-  
+
   for(icol = 0 ; icol < nn*neq ; icol++) { /* boucle sur les colonnes */
     for(n = n_vertices ; n < nn ; n++) {
       int i ;
@@ -1071,19 +1073,19 @@ double*   FEM_ComputeBodyForceResidu(FEM_t* fem,IntFct_t* intfct,const double* f
   /* Initialization */
   {
     int i ;
-    
+
     for(i = 0 ; i < nn ; i++) r[i] = zero ;
   }
-  
+
   {
     int i ;
-    
+
     for(i = 0 ; i < nn ; i++) {
       x[i] = Element_GetNodeCoordinate(el,i) ;
     }
   }
-  
-  
+
+
   /* Interface elements */
   if(Element_HasZeroThickness(el)) {
     if(dim_h == dim - 1) {
@@ -1101,23 +1103,23 @@ double*   FEM_ComputeBodyForceResidu(FEM_t* fem,IntFct_t* intfct,const double* f
           double d   = FEM_ComputeJacobianDeterminant(el,dh,nf,dim_h) ;
           double a   = weight[p]*d ;
           int i ;
-    
+
           /* cas axisymetrique ou shperique */
           if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
             double rayon = zero ;
-            
+
             arret("FEM_ComputeBodyForceResidu: to be improved") ;
-      
+
             for(i = 0 ; i < nf ; i++) rayon += h[i]*x[i][0] ;
             a *= 2*M_PI*rayon ;
             if(Symmetry_IsSpherical(sym)) a *= 2*rayon ;
           }
-    
+
           /* R(i) = F*H(i) */
           for(i = 0 ; i < nf ; i++) {
             int ii = Element_OverlappingNode(el,i) ;
             double ri = a * f[p*dec] * h[i] ;
-            
+
             r[i ] += 0.5 * ri ;
             r[ii] += 0.5 * ri ;
           }
@@ -1133,46 +1135,46 @@ double*   FEM_ComputeBodyForceResidu(FEM_t* fem,IntFct_t* intfct,const double* f
   if(dim_h == 0) {
     if(nn == 1) {
       double radius = x[0][0] ;
-      
+
       r[0] = f[0] ;
-      
+
       if(Symmetry_IsCylindrical(sym)) r[0] *= 2*M_PI*radius ;
       else if(Symmetry_IsSpherical(sym)) r[0] *= 4*M_PI*radius*radius ;
-      
+
     } else {
       arret("FEM_ComputeBodyForceResidu: impossible") ;
     }
-    
+
     return(r) ;
   }
 
   /* 1D, 2D, 3D */
   {
     int p ;
-    
+
     for(p = 0 ; p < np ; p++) {
       double* h  = IntFct_GetFunctionAtPoint(intfct,p) ;
       double* dh = IntFct_GetFunctionGradientAtPoint(intfct,p) ;
       double d   = FEM_ComputeJacobianDeterminant(el,dh,nf,dim_h) ;
       double a   = weight[p]*d ;
       int i ;
-    
+
       /* cas axisymetrique ou shperique */
       if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
         double rayon = zero ;
-      
+
         for(i = 0 ; i < nf ; i++) rayon += h[i]*x[i][0] ;
         a *= 2*M_PI*rayon ;
         if(Symmetry_IsSpherical(sym)) a *= 2*rayon ;
       }
-    
+
       /* R(i) = F*H(i) */
       for(i = 0 ; i < nf ; i++) {
         r[i] += a * f[p*dec] * h[i] ;
       }
     }
   }
-  
+
   return(r) ;
 }
 
@@ -1199,23 +1201,23 @@ double*   FEM_ComputeStrainWorkResidu(FEM_t* fem,IntFct_t* intfct,const double* 
   double* r = (double*) FEM_AllocateInBuffer(fem,SizeNeeded) ;
   double* x[Element_MaxNbOfNodes] ;
   double zero = 0. ;
-  
+
   /* Initialization */
   {
     int i ;
-    
+
     for(i = 0 ; i < ndof ; i++) r[i] = zero ;
   }
-  
+
   {
     int i ;
-    
+
     for(i = 0 ; i < nn ; i++) {
       x[i] = Element_GetNodeCoordinate(el,i) ;
     }
   }
-  
-  
+
+
   /* Interface elements */
   if(Element_HasZeroThickness(el)) {
     if(dim_h == dim - 1) {
@@ -1239,7 +1241,7 @@ double*   FEM_ComputeStrainWorkResidu(FEM_t* fem,IntFct_t* intfct,const double* 
             arret("FEM_ComputeStrainWorkResidu: to be improved") ;
           }
 
-          /* Compute the vector stress: SIG.N 
+          /* Compute the vector stress: SIG.N
            * Pay attention to the orientation of the normal:
            * the normal N is oriented from the opposite face
            * to the main face of the element, i.e. from ii to i */
@@ -1266,11 +1268,11 @@ double*   FEM_ComputeStrainWorkResidu(FEM_t* fem,IntFct_t* intfct,const double* 
       }
     }
   }
-  
+
   /* Regular element */
   {
     int p ;
-    
+
     for(p = 0 ; p < np ; p++ , sig += dec) {
       double* h  = IntFct_GetFunctionAtPoint(intfct,p) ;
       double* dh = IntFct_GetFunctionGradientAtPoint(intfct,p) ;
@@ -1279,26 +1281,26 @@ double*   FEM_ComputeStrainWorkResidu(FEM_t* fem,IntFct_t* intfct,const double* 
       double* caj = FEM_ComputeInverseJacobianMatrix(el,dh,nf,dim_h) ;
       double rayon = 0. ;
       int i,j ;
-    
+
       /* The radius in axisymmetrical or spherical case */
       if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
-        
+
         for(i = 0 ; i < nf ; i++) rayon += h[i]*x[i][0] ;
-        
+
         a *= 2*M_PI*rayon ;
-        
+
         if(Symmetry_IsSpherical(sym)) a *= 2*rayon ;
       }
-    
+
       /* R(i,j) = DH(i,k) * J(k,l) * S(l,j) */
       for(i = 0 ; i < nf ; i++) for(j = 0 ; j < dim ; j++) {
         int    k,l ;
-        
+
         for(k = 0 ; k < dim_h ; k++) for(l = 0 ; l < dim ; l++) {
           R(i,j) += a * DH(i,k) * CAJ(k,l) * SIG(l,j) ;
         }
       }
-    
+
       /* Axisymmetrical or spherical case */
       if(Symmetry_IsCylindrical(sym)) {
         /* R(i,0) = H(i)/r * S(theta,theta) */
@@ -1313,9 +1315,9 @@ double*   FEM_ComputeStrainWorkResidu(FEM_t* fem,IntFct_t* intfct,const double* 
       }
     }
   }
-  
+
   return(r) ;
-  
+
 #undef DH
 #undef SIG
 #undef CAJ
@@ -1342,23 +1344,23 @@ double*   FEM_ComputeFluxResidu(FEM_t* fem,IntFct_t* intfct,const double* f,cons
   double* r = (double*) FEM_AllocateInBuffer(fem,SizeNeeded) ;
   double* x[Element_MaxNbOfNodes] ;
   double zero = 0. ;
-  
+
   /* Initialization */
   {
     int i ;
-    
+
     for(i = 0 ; i < nn ; i++) r[i] = zero ;
   }
-  
+
   {
     int i ;
-    
+
     for(i = 0 ; i < nn ; i++) {
       x[i] = Element_GetNodeCoordinate(el,i) ;
     }
   }
-  
-  
+
+
   /* Interface elements */
   if(Element_HasZeroThickness(el)) {
     if(dim_h == dim - 1) {
@@ -1368,7 +1370,7 @@ double*   FEM_ComputeFluxResidu(FEM_t* fem,IntFct_t* intfct,const double* f,cons
 
         /* Check the numbering */
         FEM_CheckNumberingOfOverlappingNodes(el,nf) ;
-    
+
         for(p = 0 ; p < np ; p++ , f +=dec) {
           double* h  = IntFct_GetFunctionAtPoint(intfct,p) ;
           double* dh = IntFct_GetFunctionGradientAtPoint(intfct,p) ;
@@ -1377,7 +1379,7 @@ double*   FEM_ComputeFluxResidu(FEM_t* fem,IntFct_t* intfct,const double* f,cons
           double* caj = FEM_ComputeInverseJacobianMatrix(el,dh,nf,dim_h) ;
           double rayon = 0. ;
           int i ;
-    
+
           /* cas axisymetrique ou shperique */
           if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
             arret("FEM_ComputeFluxResidu: to be improved") ;
@@ -1385,15 +1387,15 @@ double*   FEM_ComputeFluxResidu(FEM_t* fem,IntFct_t* intfct,const double* f,cons
             a *= 2*M_PI*rayon ;
             if(Symmetry_IsSpherical(sym)) a *= 2*rayon ;
           }
-    
+
           /* R(i) = DH(i,k)*J(k,j)*F(j) */
           for(i = 0 ; i < nf ; i++) {
             int ii = Element_OverlappingNode(el,i) ;
             int    j,k ;
-      
+
             for(j = 0 ; j < dim ; j++) for(k = 0 ; k < dim_h ; k++) {
               double ri = a * DH(i,k) * CAJ(k,j) * f[j] ;
-              
+
               r[i]  += 0.5 * ri ;
               r[ii] += 0.5 * ri ;
             }
@@ -1404,11 +1406,11 @@ double*   FEM_ComputeFluxResidu(FEM_t* fem,IntFct_t* intfct,const double* f,cons
       }
     }
   }
-  
+
   /* Regular element */
   {
     int p ;
-    
+
     for(p = 0 ; p < np ; p++ , f +=dec) {
       double* h  = IntFct_GetFunctionAtPoint(intfct,p) ;
       double* dh = IntFct_GetFunctionGradientAtPoint(intfct,p) ;
@@ -1417,27 +1419,27 @@ double*   FEM_ComputeFluxResidu(FEM_t* fem,IntFct_t* intfct,const double* f,cons
       double* caj = FEM_ComputeInverseJacobianMatrix(el,dh,nf,dim_h) ;
       double rayon = 0. ;
       int i ;
-    
+
       /* cas axisymetrique ou shperique */
       if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
         for(i = 0 ; i < nf ; i++) rayon += h[i]*x[i][0] ;
         a *= 2*M_PI*rayon ;
         if(Symmetry_IsSpherical(sym)) a *= 2*rayon ;
       }
-    
+
       /* R(i) = DH(i,k)*J(k,j)*F(j) */
       for(i = 0 ; i < nf ; i++) {
         int    j,k ;
-      
+
         for(j = 0 ; j < dim ; j++) for(k = 0 ; k < dim_h ; k++) {
           r[i] += a * DH(i,k) * CAJ(k,j) * f[j] ;
         }
       }
     }
   }
-  
+
   return(r) ;
-  
+
 #undef DH
 #undef CAJ
 }
@@ -1449,15 +1451,15 @@ double* FEM_ComputeMassResidu(FEM_t* fem,IntFct_t* intfct,const double* f,const 
 {
   int np = IntFct_GetNbOfPoints(intfct) ;
   double g1[IntFct_MaxNbOfIntPoints] ;
-  
+
   {
     int i ;
-    
+
     for(i = 0 ; i < np ; i++) {
       g1[i] = f[i*dec] - f_n[i*dec] ;
     }
   }
-    
+
   return(FEM_ComputeBodyForceResidu(fem,intfct,g1,1)) ;
 }
 
@@ -1470,15 +1472,15 @@ double* FEM_ComputeMassBalanceEquationResidu(FEM_t* fem,IntFct_t* intfct,const d
   int nn  = Element_GetNbOfNodes(el) ;
   double* rm = FEM_ComputeMassResidu(fem,intfct,f,f_n,dec) ;
   double* rw = FEM_ComputeFluxResidu(fem,intfct,w,dec) ;
-  
+
   {
     int i ;
-    
+
     for(i = 0 ; i < nn ; i++) {
       rm[i] += -dt*rw[i] ;
     }
   }
-  
+
   return(rm) ;
 }
 
@@ -1508,7 +1510,7 @@ double* FEM_ComputeSurfaceLoadResidu(FEM_t* fem,IntFct_t* intfct,Load_t* load,co
   double* x[Element_MaxNbOfNodes] ;
   double zero = 0. ;
   int    i ;
-  
+
   for(i = 0 ; i < nn ; i++) {
     x[i] = Node_GetCoordinate(no[i]) ;
   }
@@ -1524,11 +1526,11 @@ double* FEM_ComputeSurfaceLoadResidu(FEM_t* fem,IntFct_t* intfct,Load_t* load,co
   /* flux */
   if(strncmp(load_type,"flux",4) == 0) {
     double ft = dt ;
-    
+
     if(function != NULL) {
       ft = Function_ComputeValue(function,t) - Function_ComputeValue(function,t - dt) ;
     }
-    
+
     if(dim == 1 && nn == 1) {
       double radius = x[0][0] ;
       r[ieq] = ft*Field_ComputeValueAtPoint(field,x[0],dim) ;
@@ -1536,12 +1538,12 @@ double* FEM_ComputeSurfaceLoadResidu(FEM_t* fem,IntFct_t* intfct,Load_t* load,co
       else if(Symmetry_IsSpherical(sym)) r[ieq] *= 4*M_PI*radius*radius ;
       return(r) ;
     }
-    
+
     if(dim >= 2) {
       double* rb ;
       double f[3*IntFct_MaxNbOfIntPoints] ;
       int p ;
-      
+
       for(p = 0 ; p < np ; p++) {
         double* h = IntFct_GetFunctionAtPoint(intfct,p) ;
         double y[3] = {0.,0.,0.,} ;
@@ -1551,25 +1553,25 @@ double* FEM_ComputeSurfaceLoadResidu(FEM_t* fem,IntFct_t* intfct,Load_t* load,co
         }
         f[p] = ft*Field_ComputeValueAtPoint(field,y,dim) ;
       }
-      
+
       rb = FEM_ComputeBodyForceResidu(fem,intfct,f,1) ;
-      
+
       for(i = 0 ; i < nn ; i++) r[i*neq+ieq] = rb[i] ;
-      
+
       FEM_FreeBufferFrom(fem,rb) ;
       return(r) ;
     }
   }
-  
-  
+
+
   /* force */
   if(strncmp(load_type,"force",5) == 0) {
     double ft = 1. ;
-    
+
     if(function != NULL) {
       ft = Function_ComputeValue(function,t) ;
     }
-    
+
     if(dim == 1 && nn == 1) {
       double radius = x[0][0] ;
       r[ieq] = ft*Field_ComputeValueAtPoint(field,x[0],dim) ;
@@ -1577,12 +1579,12 @@ double* FEM_ComputeSurfaceLoadResidu(FEM_t* fem,IntFct_t* intfct,Load_t* load,co
       else if(Symmetry_IsSpherical(sym)) r[ieq] *= 4*M_PI*radius*radius ;
       return(r) ;
     }
-    
+
     if(dim >= 2) {
       double* rb ;
       double f[3*IntFct_MaxNbOfIntPoints] ;
       int p ;
-      
+
       for(p = 0 ; p < np ; p++) {
         double* h = IntFct_GetFunctionAtPoint(intfct,p) ;
         double y[3] = {0.,0.,0.,} ;
@@ -1592,29 +1594,29 @@ double* FEM_ComputeSurfaceLoadResidu(FEM_t* fem,IntFct_t* intfct,Load_t* load,co
         }
         f[p] = ft*Field_ComputeValueAtPoint(field,y,dim) ;
       }
-      
+
       rb = FEM_ComputeBodyForceResidu(fem,intfct,f,1) ;
-      
+
       for(i = 0 ; i < nn ; i++) r[i*neq+ieq] = rb[i] ;
-      
+
       FEM_FreeBufferFrom(fem,rb) ;
       return(r) ;
     }
   }
-  
-  
+
+
   /* pressure */
   if(strncmp(load_type,"press",5) == 0) {
     double ft = 1. ;
-    
+
     if(function != NULL) {
       ft = Function_ComputeValue(function,t) ;
     }
-    
+
     if(dim >= 2) {
       double f[3*IntFct_MaxNbOfIntPoints] ;
       int p ;
-      
+
       for(p = 0 ; p < np ; p++) {
         double* h = IntFct_GetFunctionAtPoint(intfct,p) ;
         double* dh = IntFct_GetFunctionGradientAtPoint(intfct,p) ;
@@ -1628,45 +1630,45 @@ double* FEM_ComputeSurfaceLoadResidu(FEM_t* fem,IntFct_t* intfct,Load_t* load,co
         f0 = ft*Field_ComputeValueAtPoint(field,y,dim) ;
         for(i = 0 ; i < dim ; i++) f[p*dim+i] = -f0*n[i] ;
       }
-      
+
       for(i = 0 ; i < dim ; i++) {
         int j ;
         double* rb = FEM_ComputeBodyForceResidu(fem,intfct,f+i,dim) ;
-        
+
         for(j = 0 ; j < nn ; j++) r[j*neq+ieq+i] = rb[j] ;
-        
+
         FEM_FreeBufferFrom(fem,rb) ;
       }
-      
+
       return(r) ;
     }
   }
-  
-  
+
+
   /* tensor component */
   if(strncmp(load_type,"sig_",4) == 0) {
     int ii = load_type[4] - '1' ;
     int jj = load_type[5] - '1' ;
     double ft = 1. ;
-    
+
     if(ii < 0 || ii >= dim) {
       arret("FEM_ComputeSurfaceLoadResidu (2): unknown type") ;
     }
-    
+
     if(jj < 0 || jj >= dim) {
       arret("FEM_ComputeSurfaceLoadResidu (2): unknown type") ;
     }
-    
+
     if(function != NULL) {
       ft = Function_ComputeValue(function,t) ;
     }
-    
+
     if(dim >= 2) {
       double* rb ;
       double f[3*IntFct_MaxNbOfIntPoints] ;
       int p ;
       int j ;
-      
+
       for(p = 0 ; p < np ; p++) {
         double* h = IntFct_GetFunctionAtPoint(intfct,p) ;
         double* dh = IntFct_GetFunctionGradientAtPoint(intfct,p) ;
@@ -1677,16 +1679,16 @@ double* FEM_ComputeSurfaceLoadResidu(FEM_t* fem,IntFct_t* intfct,Load_t* load,co
         }
         f[p] = ft*Field_ComputeValueAtPoint(field,y,dim)*n[jj] ;
       }
-      
+
       rb = FEM_ComputeBodyForceResidu(fem,intfct,f,1) ;
-      
+
       for(j = 0 ; j < nn ; j++) r[j*neq+ieq+ii] = rb[j] ;
-      
+
       FEM_FreeBufferFrom(fem,rb) ;
       return(r) ;
     }
   }
-  
+
   arret("FEM_ComputeSurfaceLoadResidu (2): unknown load") ;
   return(r) ;
 }
@@ -1735,25 +1737,25 @@ void FEM_TransformResiduFromDegree2IntoDegree1(FEM_t* fem,const int inc,const in
   for(n = n_vertices ; n < nn ; n++) {
     int ilin  = n*neq + equ ;
     int i ;
-    
+
     for(i = 0 ; i < 2 ; i++) {
       int    m     = edge_vertices[n][i] ;
       int    jlin  = m*neq + equ ;
-      
+
       r[jlin] += 0.5*r[ilin] ;
     }
-    
+
     //r[ilin] = 0. ;
     #if 1
     {
       double u_n = Element_GetValueOfCurrentNodalUnknown(el,n,inc) ;
-      
+
       r[ilin] = u_n ;
-    
+
       for(i = 0 ; i < 2 ; i++) {
         int    m     = edge_vertices[n][i] ;
         double u_m = Element_GetValueOfCurrentNodalUnknown(el,m,inc) ;
-      
+
         r[ilin] -= 0.5*u_m ;
       }
     }
@@ -1767,16 +1769,16 @@ double*  FEM_ComputeIsoShapeFctInActualSpace(FEM_t* fem,double* x)
 /* fonction d'interpolation (h) et ses derivees (dh) en x */
 {
   Element_t* el = FEM_GetElement(fem) ;
-  
+
   double* a = Element_ComputeCoordinateInReferenceFrame(el,x) ;
-  
+
   {
     unsigned short int dim_e = Element_GetDimension(el) ;
     int nn = Element_GetNbOfNodes(el) ;
     size_t SizeNeeded = (nn*4)*sizeof(double) ;
     double* h = (double*) Element_AllocateInBuffer(el,SizeNeeded) ;
     double* dh = h + Element_GetNbOfNodes(el) ;
-  
+
     ShapeFct_ComputeValuesAtPoint(dim_e,nn,a,h,dh) ;
 
     return(h) ;
@@ -1790,7 +1792,7 @@ void   FEM_AverageStresses(Mesh_t* mesh,double* stress)
   unsigned int nel = Mesh_GetNbOfElements(mesh) ;
   Element_t* el0 = Mesh_GetElement(mesh) ;
   double vol = FEM_ComputeVolume(mesh) ;
-  
+
   /* Stress integration */
   {
     #define N_MODELS (3)
@@ -1798,11 +1800,11 @@ void   FEM_AverageStresses(Mesh_t* mesh,double* stress)
     const char* modelswithstresses[N_MODELS] = {"Elast","Plast","MechaMic"} ;
     const int   stressindex[N_MODELS] = {0,0,0} ;
     int i ;
-    
+
     for(i = 0 ; i < 9 ; i++) {
       double sig = 0 ;
       unsigned int ie ;
-    
+
       for(ie = 0 ; ie < nel ; ie++) {
         Element_t* el = el0 + ie ;
         double* vim = Element_GetCurrentImplicitTerm(el) ;
@@ -1811,26 +1813,26 @@ void   FEM_AverageStresses(Mesh_t* mesh,double* stress)
         int ni = Element_GetNbOfImplicitTerms(el) ;
         int nvi = ni/nbofintpoints ;
         FEM_t*    fem    = FEM_GetInstance(el) ;
-    
+
         if(Element_IsSubmanifold(el)) continue ;
-        
+
         {
           Model_t* model = Element_GetModel(el) ;
           char* codename = Model_GetCodeNameOfModel(model) ;
           int j = 0 ;
-  
+
           while(j < n_models && strcmp(modelswithstresses[j],codename)) j++ ;
-  
+
           if(j == n_models) {
             arret("FEM_AverageStresses: model not implemented") ;
           }
-          
+
           vim += stressindex[j] ;
         }
-    
+
         sig +=  FEM_IntegrateOverElement(fem,intfct,vim + i,nvi) ;
       }
-    
+
       /* Stress average */
       stress[i] = sig/vol ;
     }
@@ -1845,23 +1847,23 @@ double   FEM_ComputeVolume(Mesh_t* mesh)
   unsigned int nel = Mesh_GetNbOfElements(mesh) ;
   Element_t* el0 = Mesh_GetElement(mesh) ;
   double vol = 0 ;
-  
+
   /* The volume */
   {
     unsigned int ie ;
-    
+
     for(ie = 0 ; ie < nel ; ie++) {
       Element_t* el = el0 + ie ;
       IntFct_t* intfct = Element_GetIntFct(el) ;
       FEM_t*    fem    = FEM_GetInstance(el) ;
       double one = 1 ;
-    
+
       if(Element_IsSubmanifold(el)) continue ;
-      
+
       vol +=  FEM_IntegrateOverElement(fem,intfct,&one,0) ;
     }
   }
-  
+
   return(vol) ;
 }
 
@@ -1879,11 +1881,11 @@ double FEM_ComputeUnknown(FEM_t* fem,double** u,IntFct_t* intfct,int p,int inc)
   double* h  = IntFct_GetFunctionAtPoint(intfct,p) ;
   double par = 0. ;
   int i ;
-        
+
   for(i = 0 ; i < nn ; i++) {
     par += h[i]*U(i) ;
   }
-        
+
   return(par) ;
 #undef U
 }
@@ -1891,7 +1893,7 @@ double FEM_ComputeUnknown(FEM_t* fem,double** u,IntFct_t* intfct,int p,int inc)
 
 
 double* FEM_ComputeDisplacementVector(FEM_t* fem,double** u,IntFct_t* intfct,int p,int inc)
-/** Compute the displacement vector located at 
+/** Compute the displacement vector located at
  *  "inc,inc+1,inc+2" at the interpolation point "p" */
 {
   size_t SizeNeeded = 3*sizeof(double) ;
@@ -1901,40 +1903,40 @@ double* FEM_ComputeDisplacementVector(FEM_t* fem,double** u,IntFct_t* intfct,int
     Element_t* el = FEM_GetElement(fem) ;
     int dim = Element_GetDimensionOfSpace(el) ;
     int i ;
-    
-    /* In case of a zero-thickness element (fracture) 
+
+    /* In case of a zero-thickness element (fracture)
      * we compute the discontinuous displacement vector */
     #if 0
     if(Element_HasZeroThickness(el)) {
       int nf = IntFct_GetNbOfFunctions(intfct) ;
       double* du[Element_MaxNbOfNodes] ;
       double  du1[Element_MaxNbOfNodes*Element_MaxNbOfDOF] ;
-      
+
       for(i = 0 ; i < nf ; i++) {
         int ii = Element_OverlappingNode(el,i) ;
         int j ;
-        
+
         du[i] = du1 + i*Element_MaxNbOfDOF ;
-        
+
         for(j = 0 ; j < dim ; j++) {
           du[i][inc + j] = u[i][inc + j] - u[ii][inc + j] ;
         }
       }
-    
+
       for(i = 0 ; i < dim ; i++) {
         dis[i] = FEM_ComputeUnknown(fem,du,intfct,p,inc+i) ;
       }
-    } else 
+    } else
     #endif
     {
       for(i = 0 ; i < dim ; i++) {
         dis[i] = FEM_ComputeUnknown(fem,u,intfct,p,inc+i) ;
       }
     }
-    
+
     for(i = dim ; i < 3 ; i++) dis[i] = 0 ;
   }
-        
+
   return(dis) ;
 }
 
@@ -1951,7 +1953,7 @@ double* FEM_ComputeUnknownGradient(FEM_t* fem,double** u,IntFct_t* intfct,int p,
   int dim = Element_GetDimensionOfSpace(el) ;
   size_t SizeNeeded = 3*sizeof(double) ;
   double* grad = (double*) FEM_AllocateInBuffer(fem,SizeNeeded) ;
-  
+
 
   {
     int    dim_h  = IntFct_GetDimension(intfct) ;
@@ -1960,42 +1962,42 @@ double* FEM_ComputeUnknownGradient(FEM_t* fem,double** u,IntFct_t* intfct,int p,
     double* dh = IntFct_GetFunctionGradientAtPoint(intfct,p) ;
     double* gu = grad ;
     double grf[3] = {0,0,0} ;
-  
+
     /* the gradient in the reference frame */
     {
       int l ;
-        
+
       for(l = 0 ; l < dim_h ; l++) {
         int k ;
-      
+
         for(k = 0 ; k < nn ; k++) {
           grf[l] += U(k) * DH(k,l) ;
         }
       }
     }
-  
+
     /* the parameter gradient (gu) */
     {
       /* inverse jacobian matrix (cj) */
       double* cj = FEM_ComputeInverseJacobianMatrix(el,dh,nn,dim_h) ;
       int i ;
-      
+
       for(i = 0 ; i < 3 ; i++)  gu[i] = 0. ;
-  
+
       for(i = 0 ; i < dim ; i++) {
         int l ;
-        
+
         for(l = 0 ; l < dim_h ; l++) {
           gu[i] += grf[l] * CJ(l,i) ;
         }
       }
-      
+
       Element_FreeBufferFrom(el,cj) ;
     }
   }
-  
+
   return(grad) ;
-  
+
 #undef U
 #undef DH
 #undef CJ
@@ -2004,7 +2006,7 @@ double* FEM_ComputeUnknownGradient(FEM_t* fem,double** u,IntFct_t* intfct,int p,
 
 
 double* FEM_ComputeLinearStrainTensor(FEM_t* fem,double** u,IntFct_t* intfct,int p,int inc)
-/** Compute the 3D linearized strain tensor for the displacement vector 
+/** Compute the 3D linearized strain tensor for the displacement vector
  *  located at "inc" and at the interpolation point "p" */
 {
 #define U(n,i)   (u[n][Element_GetNodalUnknownPosition(el,n,inc + (i))])
@@ -2018,11 +2020,11 @@ double* FEM_ComputeLinearStrainTensor(FEM_t* fem,double** u,IntFct_t* intfct,int
   int dim_h = IntFct_GetDimension(intfct) ;
   size_t SizeNeeded = 9*sizeof(double) ;
   double* strain = (double*) FEM_AllocateInBuffer(fem,SizeNeeded) ;
-  
-  
+
+
   {
     int nn = IntFct_GetNbOfFunctions(intfct) ;
-    
+
     /* interpolation functions */
     double* h  = IntFct_GetFunctionAtPoint(intfct,p) ;
     double* dh = IntFct_GetFunctionGradientAtPoint(intfct,p) ;
@@ -2030,96 +2032,96 @@ double* FEM_ComputeLinearStrainTensor(FEM_t* fem,double** u,IntFct_t* intfct,int
     double* cj = FEM_ComputeInverseJacobianMatrix(el,dh,nn,dim_h) ;
     double  gu[3][3] ;
     int     i ;
-  
-  
+
+
     /* initialisation of gu */
     for(i = 0 ; i < 3 ; i++) {
       int j ;
-        
+
       for(j = 0 ; j < 3 ; j++)  {
         gu[i][j] = 0. ;
       }
     }
-  
+
     /* displacement gradient (gu) */
     if(Element_HasZeroThickness(el)) {
       double* norm = Element_ComputeNormalVector(el,dh,nn,dim_h) ;
       double du[3] = {0,0,0} ;
-      
+
       /* the displacement discontinuity */
       for(i = 0 ; i < dim ; i++) {
         int k ;
-          
+
         for(k = 0 ; k < nn ; k++) {
           int kk = Element_OverlappingNode(el,k) ;
-            
+
           du[i] += (U(k,i) - U(kk,i)) * h[k] ;
         }
       }
-      
+
       #define NORM(i)  (norm[i])
       for(i = 0 ; i < dim ; i++) {
         int j ;
-        
+
         for(j = 0 ; j < dim ; j++) {
           gu[i][j] = du[i] * NORM(j) ;
         }
       }
       #undef NORM
-      
+
     } else {
       double  grf[3][3] = {{0,0,0},{0,0,0},{0,0,0}} ;
-      
+
       /* the gradient in the reference frame */
       for(i = 0 ; i < dim ; i++) {
         int l ;
-          
+
         for(l = 0 ; l < dim_h ; l++) {
           int k ;
-          
+
           for(k = 0 ; k < nn ; k++) {
             grf[i][l] += U(k,i) * DH(k,l) ;
           }
         }
       }
-      
+
       /* the gradient in the current frame */
       for(i = 0 ; i < dim ; i++) {
         int j ;
-        
+
         for(j = 0 ; j < dim ; j++) {
           int l ;
-          
+
           for(l = 0 ; l < dim_h ; l++) {
             gu[i][j] += grf[i][l] * CJ(l,j) ;
           }
         }
       }
     }
-      
+
     {
       double* eps = strain ;
-  
+
       /* Linearized strain tensor */
       for(i = 0 ; i < 3 ; i++) {
         int j ;
-        
+
         for(j = 0 ; j < 3 ; j++) {
           EPS(i,j) = (gu[i][j] + gu[j][i])*0.5 ;
         }
       }
-  
+
       /* symmetric cases: axisymmetrical or spherical */
       if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
         double rayon = 0. ;
         double u_r   = 0. ;
-        
+
         if(Element_HasZeroThickness(el)) {
           arret("FEM_ComputeLinearStrainTensor: not available yet") ;
         } else {
           for(i = 0 ; i < nn ; i++) {
             double* x = Element_GetNodeCoordinate(el,i) ;
-          
+
             rayon += h[i]*x[0] ;
             u_r   += h[i]*U(i,0) ;
           }
@@ -2128,10 +2130,10 @@ double* FEM_ComputeLinearStrainTensor(FEM_t* fem,double** u,IntFct_t* intfct,int
         }
       }
     }
-      
+
     Element_FreeBufferFrom(el,cj) ;
   }
-  
+
   return(strain) ;
 #undef U
 #undef DH
@@ -2152,11 +2154,11 @@ double FEM_ComputeCurrentUnknown(FEM_t* fem,double* h,int nn,int inc)
   Element_t* el = FEM_GetElement(fem) ;
   int    i ;
   double par = 0. ;
-  
+
   for(i = 0 ; i < nn ; i++) {
     par += h[i]*U(i) ;
   }
-  
+
   return (par) ;
 #undef U
 }
@@ -2169,11 +2171,11 @@ double FEM_ComputePreviousUnknown(FEM_t* fem,double* h,int nn,int inc)
   Element_t* el = FEM_GetElement(fem) ;
   int    i ;
   double par = 0. ;
-  
+
   for(i = 0 ; i < nn ; i++) {
     par += h[i]*U(i) ;
   }
-  
+
   return (par) ;
 #undef U
 }
@@ -2186,51 +2188,51 @@ double* FEM_ComputeCurrentUnknownGradient(FEM_t* fem,double* dh,int nn,int inc)
 #define U(n)   (Element_GetValueOfCurrentNodalUnknown(el,n,inc))
 #define DH(n,i)  (dh[(n)*3 + (i)])
 //#define DH(n,i)  (dh[(n)*dim_h + (i)])
-#define CJ(i,j)  (cj[(i)*3 + (j)]) 
+#define CJ(i,j)  (cj[(i)*3 + (j)])
   Element_t* el = FEM_GetElement(fem) ;
   int    dim_h  = Element_GetDimension(el) ;
   int dim = Element_GetDimensionOfSpace(el) ;
   size_t SizeNeeded = 3*sizeof(double) ;
   double* grad = (double*) FEM_AllocateInBuffer(fem,SizeNeeded) ;
-  
-  
+
+
   {
     /* inverse jacobian matrix (cj) */
     double* cj = FEM_ComputeInverseJacobianMatrix(el,dh,nn,dim_h) ;
     double* gu = grad ;
     double grf[3] = {0,0,0} ;
     int    i ;
-  
+
     /* initialisation of gu */
     for(i = 0 ; i < 3 ; i++)  gu[i] = 0. ;
-  
+
     /* the gradient in the reference frame */
     {
       int l ;
-        
+
       for(l = 0 ; l < dim_h ; l++) {
         int k ;
-      
+
         for(k = 0 ; k < nn ; k++) {
           grf[l] += U(k)*DH(k,l) ;
         }
       }
     }
-  
+
     /* the parameter gradient (gu) */
     for(i = 0 ; i < dim ; i++) {
       int l ;
-        
+
       for(l = 0 ; l < dim_h ; l++) {
         gu[i] += grf[l]*CJ(l,i) ;
       }
     }
-  
+
     Element_FreeBufferFrom(el,cj) ;
   }
-  
+
   return(grad) ;
-  
+
 #undef U
 #undef DH
 #undef CJ
@@ -2250,45 +2252,45 @@ double* FEM_ComputePreviousUnknownGradient(FEM_t* fem,double* dh,int nn,int inc)
   int dim = Element_GetDimensionOfSpace(el) ;
   size_t SizeNeeded = 3*sizeof(double) ;
   double* grad = (double*) FEM_AllocateInBuffer(fem,SizeNeeded) ;
-  
-  
+
+
   {
     /* inverse jacobian matrix (cj) */
     double* cj = FEM_ComputeInverseJacobianMatrix(el,dh,nn,dim_h) ;
     double* gu = grad ;
     double grf[3] = {0,0,0} ;
     int    i ;
-  
+
     /* initialisation of gu */
     for(i = 0 ; i < 3 ; i++)  gu[i] = 0. ;
-  
+
     /* the gradient in the reference frame */
     {
       int l ;
-        
+
       for(l = 0 ; l < dim_h ; l++) {
         int k ;
-      
+
         for(k = 0 ; k < nn ; k++) {
           grf[l] += U(k)*DH(k,l) ;
         }
       }
     }
-  
+
     /* the parameter gradient (gu) */
     for(i = 0 ; i < dim ; i++) {
       int l ;
-        
+
       for(l = 0 ; l < dim_h ; l++) {
         gu[i] += grf[l]*CJ(l,i) ;
       }
     }
-  
+
     Element_FreeBufferFrom(el,cj) ;
   }
 
   return(grad) ;
-  
+
 #undef U
 #undef DH
 #undef CJ
@@ -2315,14 +2317,14 @@ double* FEM_ComputeCurrentLinearStrainTensor(FEM_t* fem,double* h,double* dh,int
   int dim = Element_GetDimensionOfSpace(el) ;
   int    i,j ;
   double gu[3][3], *cj ;
-  
-  
+
+
   /* initialisation of gu */
   for(i = 0 ; i < 3 ; i++) for(j = 0 ; j < 3 ; j++)  gu[i][j] = 0. ;
-  
+
   /* inverse jacobian matrix (cj) */
   cj = FEM_ComputeInverseJacobianMatrix(el,dh,nn,dim_h) ;
-  
+
   /* displacement gradient (gu) */
   for(i = 0 ; i < dim ; i++) for(j = 0 ; j < dim ; j++) {
     int    k,l ;
@@ -2330,12 +2332,12 @@ double* FEM_ComputeCurrentLinearStrainTensor(FEM_t* fem,double* h,double* dh,int
       gu[i][j] += U(k,i)*DH(k,l)*CJ(l,j) ;
     }
   }
-  
+
   /* Linearized strain tensor */
   for(i = 0 ; i < 3 ; i++) for(j = 0 ; j < 3 ; j++) {
     EPS(i,j) = (gu[i][j] + gu[j][i])*0.5 ;
   }
-  
+
   /* symmetric cases: axisymmetrical or spherical */
   if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
     double rayon = 0. ;
@@ -2348,7 +2350,7 @@ double* FEM_ComputeCurrentLinearStrainTensor(FEM_t* fem,double* h,double* dh,int
     EPS(2,2) += u_r/rayon ;
     if(Symmetry_IsSpherical(sym)) EPS(1,1) += u_r/rayon ;
   }
-  
+
   return(eps) ;
 #undef U
 #undef DH
@@ -2376,14 +2378,14 @@ double* FEM_ComputeIncrementalLinearStrainTensor(FEM_t* fem,double* h,double* dh
   int dim = Element_GetDimensionOfSpace(el) ;
   int    i,j ;
   double gu[3][3], *cj ;
-  
-  
+
+
   /* initialisation of gu */
   for(i = 0 ; i < 3 ; i++) for(j = 0 ; j < 3 ; j++)  gu[i][j] = 0. ;
-  
+
   /* inverse jacobian matrix (cj) */
   cj = FEM_ComputeInverseJacobianMatrix(el,dh,nn,dim_h) ;
-  
+
   /* displacement gradient (gu) */
   for(i = 0 ; i < dim ; i++) for(j = 0 ; j < dim ; j++) {
     int    k,l ;
@@ -2391,12 +2393,12 @@ double* FEM_ComputeIncrementalLinearStrainTensor(FEM_t* fem,double* h,double* dh
       gu[i][j] += DU(k,i)*DH(k,l)*CJ(l,j) ;
     }
   }
-  
+
   /* Linearized strain tensor */
   for(i = 0 ; i < 3 ; i++) for(j = 0 ; j < 3 ; j++) {
     EPS(i,j) = (gu[i][j] + gu[j][i])*0.5 ;
   }
-  
+
   /* symmetric cases: axisymmetrical or spherical */
   if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
     double rayon = 0. ;
@@ -2409,7 +2411,7 @@ double* FEM_ComputeIncrementalLinearStrainTensor(FEM_t* fem,double* h,double* dh
     EPS(2,2) += u_r/rayon ;
     if(Symmetry_IsSpherical(sym)) EPS(1,1) += u_r/rayon ;
   }
-  
+
   return(eps) ;
 #undef U
 #undef U_n
@@ -2437,13 +2439,13 @@ double* FEM_ComputePreviousLinearStrainTensor(FEM_t* fem,double* h,double* dh,in
   int dim = Element_GetDimensionOfSpace(el) ;
   int    i,j ;
   double gu[3][3], *cj ;
-  
+
   /* initialisation of gu */
   for(i = 0 ; i < 3 ; i++) for(j = 0 ; j < 3 ; j++)  gu[i][j] = 0. ;
-  
+
   /* inverse jacobian matrix (cj) */
   cj = FEM_ComputeInverseJacobianMatrix(el,dh,nn,dim_h) ;
-  
+
   /* displacement gradient (gu) */
   for(i = 0 ; i < dim ; i++) for(j = 0 ; j < dim ; j++) {
     int    k,l ;
@@ -2451,12 +2453,12 @@ double* FEM_ComputePreviousLinearStrainTensor(FEM_t* fem,double* h,double* dh,in
       gu[i][j] += U(k,i)*DH(k,l)*CJ(l,j) ;
     }
   }
-  
+
   /* Linearized strain tensor */
   for(i = 0 ; i < 3 ; i++) for(j = 0 ; j < 3 ; j++) {
     EPS(i,j) = (gu[i][j] + gu[j][i])*0.5 ;
   }
-  
+
   /* symmetric cases: axisymmetrical or spherical */
   if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
     double rayon = 0. ;
@@ -2469,7 +2471,7 @@ double* FEM_ComputePreviousLinearStrainTensor(FEM_t* fem,double* h,double* dh,in
     EPS(2,2) += u_r/rayon ;
     if(Symmetry_IsSpherical(sym)) EPS(1,1) += u_r/rayon ;
   }
-  
+
   return(eps) ;
 #undef U
 #undef DH
@@ -2481,7 +2483,7 @@ double* FEM_ComputePreviousLinearStrainTensor(FEM_t* fem,double* h,double* dh,in
 
 
 double   FEM_IntegrateOverElement(FEM_t* fem,IntFct_t* intfct,double* f,int shift)
-/** Integrate f over the element through the integration points. 
+/** Integrate f over the element through the integration points.
  *  Return the integration result. */
 {
   Element_t* el = FEM_GetElement(fem) ;
@@ -2491,7 +2493,7 @@ double   FEM_IntegrateOverElement(FEM_t* fem,IntFct_t* intfct,double* f,int shif
   double* x[Element_MaxNbOfNodes] ;
   double sum = 0 ;
   int    i ;
-  
+
   for(i = 0 ; i < nn ; i++) {
     x[i] = Element_GetNodeCoordinate(el,i) ;
   }
@@ -2500,16 +2502,16 @@ double   FEM_IntegrateOverElement(FEM_t* fem,IntFct_t* intfct,double* f,int shif
   if(dim_h == 0) {
     if(nn == 1) {
       double radius = x[0][0] ;
-      
+
       sum = f[0] ;
-      
+
       if(Symmetry_IsCylindrical(sym)) sum *= 2*M_PI*radius ;
       else if(Symmetry_IsSpherical(sym)) sum *= 4*M_PI*radius*radius ;
-      
+
     } else {
       arret("FEM_IntegrateOverElement: impossible") ;
     }
-    
+
     return(sum) ;
   }
 
@@ -2518,26 +2520,26 @@ double   FEM_IntegrateOverElement(FEM_t* fem,IntFct_t* intfct,double* f,int shif
     int np = IntFct_GetNbOfPoints(intfct) ;
     double* weight = IntFct_GetWeight(intfct) ;
     int p ;
-  
+
     for(p = 0 ; p < np ; p++) {
       double* dh = IntFct_GetFunctionGradientAtPoint(intfct,p) ;
       double d   = FEM_ComputeJacobianDeterminant(el,dh,nn,dim_h) ;
       double a   = weight[p]*d ;
-    
+
       /* Axisymmetrical or spherical case */
       if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
         double* h  = IntFct_GetFunctionAtPoint(intfct,p) ;
         double rayon = 0 ;
-      
+
         for(i = 0 ; i < nn ; i++) rayon += h[i]*x[i][0] ;
         a *= 2*M_PI*rayon ;
         if(Symmetry_IsSpherical(sym)) a *= 2*rayon ;
       }
-    
+
       sum += a*f[p*shift] ;
     }
   }
-  
+
   return(sum) ;
 }
 
@@ -2563,14 +2565,14 @@ double FEM_ComputeJacobianDeterminantNew(Element_t* el,double* dh,int nn,const i
   #if 0
   double* jac  = FEM_ComputeJacobianMatrixNew(el,dh,nn,dim_h) ;
   double det = Math_Compute3x3MatrixDeterminant(jac) ;
-  
+
   if(det < 0) {
     arret("FEM_ComputeJacobianDeterminant: negative determinant (det = %f)",det) ;
   }
-  
+
   Element_FreeBufferFrom(el,jac) ;
   #endif
-  
+
   return(Element_ComputeJacobianDeterminant(el,dh,nn,dim_h)) ;
 }
 
@@ -2582,12 +2584,12 @@ double* FEM_ComputeInverseJacobianMatrixNew(Element_t* el,double* dh,int nn,cons
   #if 0
   size_t SizeNeeded = 9*sizeof(double) ;
   double* cj = (double*) Element_AllocateInBuffer(el,SizeNeeded) ;
-  
+
   {
     double* jc = FEM_ComputeJacobianMatrixNew(el,dh,nn,dim_h) ;
     double* b  = Math_Inverse3x3Matrix(jc) ;
     int i ;
-    
+
     if(b) {
       for(i = 0 ; i < 9 ; i++) {
         cj[i] = b[i] ;
@@ -2596,7 +2598,7 @@ double* FEM_ComputeInverseJacobianMatrixNew(Element_t* el,double* dh,int nn,cons
       arret("FEM_ComputeInverseJacobianMatrix: not invertible") ;
     }
   }
-    
+
   return(cj) ;
   #endif
   return(Element_ComputeInverseJacobianMatrix(el,dh,nn,dim_h)) ;
@@ -2635,29 +2637,29 @@ double* FEM_ComputeInverseJacobianMatrixOld(Element_t* el,double* dh,int nn)
   int    dim_h = Element_GetDimension(el) ;
   int    dim = Geometry_GetDimension(Element_GetGeometry(el));
   double jc[3][3],dt,td ;
-  
-  
+
+
   /* Initialization */
   {
     int i ;
-    
+
     for(i = 0 ; i < 9 ; i++) cj[i] = 0. ;
   }
-  
-  
+
+
   /* The jacobian matrix */
   {
     double* jc1 = FEM_ComputeJacobianMatrixOld(el,dh,nn) ;
     int i ;
-    
+
     for(i = 0 ; i < dim ; i++) {
       int j ;
-      
+
       for(j = 0 ; j < dim_h ; j++) {
         jc[i][j] = jc1[i*3 + j] ;
       }
     }
-  
+
     Element_FreeBufferFrom(el,jc1) ;
   }
 
@@ -2688,7 +2690,7 @@ double* FEM_ComputeInverseJacobianMatrixOld(Element_t* el,double* dh,int nn)
   } else if(dim_h == 2) {
     if(dim == 3) {
       double v ;
-      
+
       /* on calcule la normale a la surface */
       jc[0][2] = jc[1][0]*jc[2][1] - jc[2][0]*jc[1][1] ;
       jc[1][2] = jc[2][0]*jc[0][1] - jc[0][0]*jc[2][1] ;
@@ -2697,12 +2699,12 @@ double* FEM_ComputeInverseJacobianMatrixOld(Element_t* el,double* dh,int nn)
       jc[0][2] /= v ;
       jc[1][2] /= v ;
       jc[2][2] /= v ;
-      
+
       /* puis on inverse */
       dt  = jc[0][0]*jc[1][1]*jc[2][2] + jc[1][0]*jc[2][1]*jc[0][2]
           + jc[2][0]*jc[0][1]*jc[1][2] - jc[2][0]*jc[1][1]*jc[0][2]
           - jc[1][0]*jc[0][1]*jc[2][2] - jc[0][0]*jc[2][1]*jc[1][2] ;
-          
+
       if(dt != 0.) {
         td = 1./dt ;
         CJ(0,0) = (jc[1][1]*jc[2][2] - jc[2][1]*jc[1][2])*td ;
@@ -2736,10 +2738,10 @@ double* FEM_ComputeInverseJacobianMatrixOld(Element_t* el,double* dh,int nn)
     } else if(dim == 2) {
       /* on calcul la normale, c1^e_z, a la ligne */
       double v = sqrt(jc[0][0]*jc[0][0] + jc[1][0]*jc[1][0]) ;
-      
+
       jc[0][1] =   jc[1][0]/v ;
       jc[1][1] = - jc[0][0]/v ;
-      
+
       /* puis on inverse */
       dt = jc[0][0]*jc[1][1] - jc[1][0]*jc[0][1] ;
       if(dt != 0.) {
@@ -2784,37 +2786,37 @@ double* FEM_ComputeJacobianMatrixOld(Element_t* el,double* dh,int nn)
   double* jc = (double*) Element_AllocateInBuffer(el,SizeNeeded) ;
   int  dim_h = Element_GetDimension(el) ;
   int  dim   = Geometry_GetDimension(Element_GetGeometry(el));
-  
-  
+
+
   /* Initialization */
   {
     int i ;
-    
+
     for(i = 0 ; i < 9 ; i++) jc[i] = 0. ;
   }
-  
-  
+
+
   /* The Jacobian matrix */
   {
     int i ;
-    
+
     for(i = 0 ; i < dim ; i++) {
       int    j ;
-    
+
       for(j = 0 ; j < dim_h ; j++) {
         int k ;
-    
+
         JC(i,j) = 0. ;
-        
+
         for(k = 0 ; k < nn ; k++) {
           double* x = Element_GetNodeCoordinate(el,k) ;
-      
+
           JC(i,j) += x[i]*DH(k,j) ;
         }
       }
     }
   }
-  
+
   return(jc) ;
 #undef DH
 #undef JC
@@ -2834,10 +2836,10 @@ double FEM_ComputeJacobianDeterminantOld(Element_t* el,double* dh,int nn)
   int    dim   = Geometry_GetDimension(Element_GetGeometry(el));
   double* jac  = FEM_ComputeJacobianMatrixOld(el,dh,nn) ;
   double det ;
-  
-  /* 
+
+  /*
      1. For a volume: it's det(J1,J2,J3)
-     2. For a surface: it's det(J1,J2,e3) 
+     2. For a surface: it's det(J1,J2,e3)
         where e3 is the unit normal vector to (J1,J2)
      3. For a line   : it's det(J1,e2,e3) = |J1|
         where (e2,e3) are orthonormed vectors in the normal plane to J1
@@ -2852,7 +2854,7 @@ double FEM_ComputeJacobianDeterminantOld(Element_t* el,double* dh,int nn)
            + J(1,0)*J(2,1)*J(0,2) - J(1,0)*J(0,1)*J(2,2)
            + J(2,0)*J(0,1)*J(1,2) - J(2,0)*J(1,1)*J(0,2) ;
       det  = fabs(det) ;
-      
+
     } else {
       arret("FEM_ComputeJacobianDeterminant (1)") ;
     }
@@ -2861,13 +2863,13 @@ double FEM_ComputeJacobianDeterminantOld(Element_t* el,double* dh,int nn)
   } else if(dim_h == 2) {
     if(dim == 3) {
       double v[3] ;
-      
+
       v[0] = J(1,0)*J(2,1) - J(2,0)*J(1,1) ;
       v[1] = J(2,0)*J(0,1) - J(0,0)*J(2,1) ;
       v[2] = J(0,0)*J(1,1) - J(1,0)*J(0,1) ;
-      
+
       det = sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]) ;
-      
+
     } else if(dim == 2) {
       det  = J(0,0)*J(1,1) - J(1,0)*J(0,1) ;
       det  = fabs(det) ;
@@ -2879,25 +2881,25 @@ double FEM_ComputeJacobianDeterminantOld(Element_t* el,double* dh,int nn)
   /* 3. Line: det(J1,e2,e3) = |J1|(e1,e2,e3) = |J1|   */
   } else if(dim_h == 1) {
     int i ;
-    
+
     det = 0. ;
     for(i = 0 ; i < dim ; i++) {
       det += J(i,0)*J(i,0) ;
     }
-    
+
     det = sqrt(det) ;
 
   /* 4. Point: det(e1,e2,e3) = 1 */
   } else if(dim_h == 0) {
     det = 1. ;
-    
+
   } else {
-  
+
     arret("FEM_ComputeJacobianDeterminant (3)") ;
   }
-  
+
   Element_FreeBufferFrom(el,jac) ;
-  
+
   return(det) ;
 #undef DH
 #undef J
@@ -2924,7 +2926,7 @@ double*  FEM_ComputeNormalVector(Element_t* el,double* dh,int nn)
   double c[3][3] ;
 
   if(dim > 3) arret("FEM_ComputeNormalVector") ;
-  
+
   /* le jacobien */
   for(i = 0 ; i < dim ; i++) for(j = 0 ; j < dim_h ; j++) {
     int    k ;
@@ -2934,7 +2936,7 @@ double*  FEM_ComputeNormalVector(Element_t* el,double* dh,int nn)
       c[i][j] += x[i]*DH(k,j) ;
     }
   }
-  
+
   /* 1. Surface: norm = c1^c2 */
   if(dim_h == 2) {
     double v ;
@@ -2980,30 +2982,30 @@ double* FEM_ComputeUnknowns(FEM_t* fem,IntFct_t* intfct,double** u,int inc)
   int np = IntFct_GetNbOfPoints(intfct) ;
   size_t SizeNeeded = np*sizeof(double) ;
   double* unk = (double*) FEM_AllocateInBuffer(fem,SizeNeeded) ;
-  
-  
+
+
   {
     int nn = IntFct_GetNbOfFunctions(intfct) ;
     int p ;
-    
+
     for(p = 0 ; p < np ; p++) {
       /* interpolation functions */
       double* h  = IntFct_GetFunctionAtPoint(intfct,p) ;
-    
+
       /* Unknown */
       {
         double par = 0. ;
         int i ;
-        
+
         for(i = 0 ; i < nn ; i++) {
           par += h[i]*U(i) ;
         }
-        
+
         unk[p] = par ;
       }
     }
   }
-  
+
   return(unk) ;
 #undef U
 }
@@ -3011,7 +3013,7 @@ double* FEM_ComputeUnknowns(FEM_t* fem,IntFct_t* intfct,double** u,int inc)
 
 
 double* FEM_ComputeUnknownGradients(FEM_t* fem,IntFct_t* intfct,double** u,int inc)
-/** Compute the unknown gradients at the interpolation points located at "inc" 
+/** Compute the unknown gradients at the interpolation points located at "inc"
  *  WRONG IMPLEMENTATION: check inverse jacobian matrix (dim/dim_h pb)*/
 {
 #define U(n)   (u[n][Element_GetNodalUnknownPosition(el,n,inc)])
@@ -3023,12 +3025,12 @@ double* FEM_ComputeUnknownGradients(FEM_t* fem,IntFct_t* intfct,double** u,int i
   int np = IntFct_GetNbOfPoints(intfct) ;
   size_t SizeNeeded = np*3*sizeof(double) ;
   double* ugrd = (double*) FEM_AllocateInBuffer(fem,SizeNeeded) ;
-  
+
 
   {
     int nn = IntFct_GetNbOfFunctions(intfct) ;
     int p ;
-    
+
     for(p = 0 ; p < np ; p++) {
       /* interpolation functions */
       double* dh = IntFct_GetFunctionGradientAtPoint(intfct,p) ;
@@ -3036,31 +3038,31 @@ double* FEM_ComputeUnknownGradients(FEM_t* fem,IntFct_t* intfct,double** u,int i
       double* cj = FEM_ComputeInverseJacobianMatrix(el,dh,nn,dim_h) ;
       double gu[3] ;
       int i ;
-  
+
       /* initialisation of gu */
       for(i = 0 ; i < 3 ; i++)  gu[i] = 0. ;
-  
+
       /* the parameter gradient (gu) */
       for(i = 0 ; i < dim_h ; i++) {
         int k,l ;
-        
+
         for(k = 0 ; k < nn ; k++) for(l = 0 ; l < dim_h ; l++) {
           gu[i] += U(k)*DH(k,l)*CJ(l,i) ;
         }
       }
-      
+
       {
         double* grad = ugrd + 3*p ;
-        
+
         for(i = 0 ; i < 3 ; i++) grad[i] = gu[i] ;
       }
-      
+
       Element_FreeBufferFrom(el,cj) ;
     }
   }
-  
+
   return(ugrd) ;
-  
+
 #undef U
 #undef DH
 #undef CJ
@@ -3069,7 +3071,7 @@ double* FEM_ComputeUnknownGradients(FEM_t* fem,IntFct_t* intfct,double** u,int i
 
 
 double* FEM_ComputeLinearStrainTensors(FEM_t* fem,IntFct_t* intfct,double** u,int inc)
-/** Compute the 3D linearized strain tensors for the displacement vectors 
+/** Compute the 3D linearized strain tensors for the displacement vectors
  *  located at "inc" and at the interpolation points.
  *  WRONG IMPLEMENTATION: check inverse jacobian matrix (dim/dim_h pb)*/
 {
@@ -3084,12 +3086,12 @@ double* FEM_ComputeLinearStrainTensors(FEM_t* fem,IntFct_t* intfct,double** u,in
   int np = IntFct_GetNbOfPoints(intfct) ;
   size_t SizeNeeded = np*9*sizeof(double) ;
   double* strains = (double*) FEM_AllocateInBuffer(fem,SizeNeeded) ;
-  
-  
+
+
   {
     int nn = IntFct_GetNbOfFunctions(intfct) ;
     int p ;
-    
+
     for(p = 0 ; p < np ; p++) {
       /* interpolation functions */
       double* h  = IntFct_GetFunctionAtPoint(intfct,p) ;
@@ -3098,54 +3100,54 @@ double* FEM_ComputeLinearStrainTensors(FEM_t* fem,IntFct_t* intfct,double** u,in
       double* cj = FEM_ComputeInverseJacobianMatrix(el,dh,nn,dim_h) ;
       double  gu[3][3] ;
       int     i ;
-  
-  
+
+
       /* initialisation of gu */
       for(i = 0 ; i < 3 ; i++) {
         int j ;
-        
+
         for(j = 0 ; j < 3 ; j++)  {
           gu[i][j] = 0. ;
         }
       }
-  
+
       /* displacement gradient (gu) */
       for(i = 0 ; i < dim_h ; i++) {
         int j ;
-        
+
         for(j = 0 ; j < dim_h ; j++) {
           int k ;
-          
+
           for(k = 0 ; k < nn ; k++) {
             int l ;
-          
+
             for(l = 0 ; l < dim_h ; l++) {
               gu[i][j] += U(k,i)*DH(k,l)*CJ(l,j) ;
             }
           }
         }
       }
-      
+
       {
         double* eps = strains + 9*p ;
-  
+
         /* Linearized strain tensor */
         for(i = 0 ; i < 3 ; i++) {
           int j ;
-        
+
           for(j = 0 ; j < 3 ; j++) {
             EPS(i,j) = (gu[i][j] + gu[j][i])*0.5 ;
           }
         }
-  
+
         /* symmetric cases: axisymmetrical or spherical */
         if(Symmetry_IsCylindrical(sym) || Symmetry_IsSpherical(sym)) {
           double rayon = 0. ;
           double u_r   = 0. ;
-        
+
           for(i = 0 ; i < nn ; i++) {
             double* x = Element_GetNodeCoordinate(el,i) ;
-          
+
             rayon += h[i]*x[0] ;
             u_r   += h[i]*U(i,0) ;
           }
@@ -3153,11 +3155,11 @@ double* FEM_ComputeLinearStrainTensors(FEM_t* fem,IntFct_t* intfct,double** u,in
           if(Symmetry_IsSpherical(sym)) EPS(1,1) += u_r/rayon ;
         }
       }
-      
+
       Element_FreeBufferFrom(el,cj) ;
     }
   }
-  
+
   return(strains) ;
 #undef U
 #undef DH

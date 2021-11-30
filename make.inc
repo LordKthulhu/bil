@@ -14,7 +14,7 @@ endif
 
 # Compilers (C++11 for variadic macros)
 #----------
-CC     := ${COMPC} -x c   -std=c11
+CC     := ${COMPC} -x c   -std=c11 -fopenmp
 CPP    := ${COMPC} -x c++ -std=c++11
 F77    := ${COMPF} -cpp
 LEX    := flex #-d
@@ -100,5 +100,5 @@ RANLIB = ranlib
 
 
 # To create and install a shared library
-CCSO = ${COMPC} -shared
+CCSO = ${COMPC} -shared -fopenmp
 LDCONFIG  = /sbin/ldconfig
