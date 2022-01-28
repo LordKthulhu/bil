@@ -4,6 +4,12 @@ SHELL = /bin/sh
 
 include ../make.inc
 
+SONAMEOPTION := -soname
+
+ifeq ($(UNAME),Darwin)
+SONAMEOPTION := -install_name
+endif
+
 LIBBILa     = ${BIL_LIBDIR}/libbil-${BIL_VERSION}.a
 
 LIBBILso    = ${BIL_LIBDIR}/libbil-${BIL_VERSION}.so
@@ -115,7 +121,7 @@ ${LIBBILa}: ${SRCALL} ${OBJALL}
 
 ${LIBBILso}: ${SRCALL} ${OBJALL}
 	@echo "\nCreating the shared library "${LIBBILso}
-	${CCSO} ${OPTIM} -Wl,-install_name,${LIBBILso} -o ${LIBBILso} ${OBJALL1} ${LFLAGS}
+	${CCSO} ${OPTIM} -Wl,${SONAMEOPTION},${LIBBILso} -o ${LIBBILso} ${OBJALL1} ${LFLAGS}
 
 
 
