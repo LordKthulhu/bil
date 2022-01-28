@@ -15,7 +15,7 @@ static Session_t* cursession = NULL ;
 Session_t*  (Session_GetCurrentInstance)(void)
 {
   assert(cursession) ;
-  
+
   return(cursession) ;
 }
 
@@ -24,7 +24,7 @@ Session_t*  (Session_GetCurrentInstance)(void)
 Session_t*   (Session_New)(void)
 {
   Session_t* session = (Session_t*) Mry_New(Session_t) ;
-  
+
   return(session) ;
 }
 
@@ -40,17 +40,17 @@ void    (Session_Delete)(void)
 Session_t*   (Session_Open)(void)
 {
   Session_t* prev  = cursession ;
-  
+
   cursession = Session_New() ;
-  
+
   Session_GetPreviousSession(cursession) = prev ;
-    
+
   if(prev) {
     Session_GetIndex(cursession) = Session_GetIndex(prev) + 1 ;
   } else {
     Session_GetIndex(cursession) = 1 ;
   }
-  
+
   return(cursession) ;
 }
 
@@ -66,7 +66,7 @@ Session_t*   (Session_Close)(void)
 
   {
     Session_t* garbage = cursession ;
-    
+
     cursession = Session_GetPreviousSession(garbage) ;
 
     free(garbage) ;

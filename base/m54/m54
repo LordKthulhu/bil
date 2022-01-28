@@ -6,7 +6,7 @@ MAIL
 1 50 1
 1 1 1
 MATE
-54
+Model = M54
 porosite = 0.4
 N_CH     = 5.2
 T_CH     = 2.e5

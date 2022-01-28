@@ -55,6 +55,11 @@ static void    CheckMicrostructureDataSet(DataSet_t*) ;
 static double* MacroGradient(Element_t*,double) ;
 static double* MacroStrain(Element_t*,double) ;
 
+double HydrDeg(double) ;
+double YModFrac(double) ;
+double Phi(double) ;
+double Cohes(double) ;
+
 
 /* Material parameters */
 static double  gravity ;
@@ -111,7 +116,25 @@ double HydrDeg(double t)
 {
   // return( 0.8*(1-exp(-(t+10)/23.5/3600)) ) ; Old test
   // return( 0.3875 + 0.825/3.142 * atan(0.3*(t/3600-11.0)) ) ;
-  return( 0.3525 + 0.895/3.142 * atan(0.3*(t/3600-9.0)) ) ;
+  return( 0.3525 + 0.895/3.142 * atan(0.3*(t/3600.0-9.0)) ) ;
+}
+
+double YModFrac(double alp)
+{
+  if(alp<0.15) return(0.001/0.15*alp) ;
+  else return(0.001+0.999*pow((alp-0.15)/(1.0-0.15),0.24)) ;
+}
+
+double Phi(double alp)
+{
+  if(alp<0.15) return(0.001/0.15*alp*3.14/4.0) ;
+  else return( (0.001+0.999*pow((alp-0.15)/(1.0-0.15),0.24))*3.14/4.0 ) ;
+}
+
+double Cohes(double alp)
+{
+  if(alp<0.15) return(0.001/0.15*alp*25.0e6) ;
+  else return( (0.001+0.999*pow((alp-0.15)/(1.0-0.15),0.24))*25.0e6 ) ;
 }
 
 
@@ -217,7 +240,12 @@ void GetProperties(Element_t* el,double t)
   sig0    = &Element_GetPropertyValue(el,"sig0") ;
   double young = Element_GetPropertyValue(el,"young") ;
   double poisson = Element_GetPropertyValue(el,"poisson") ;
-  double young_t = (t >= t_init) ? alpha*young : 1e-9 ;
+  // double young_t = (t >= t_init) ? YModFrac(alpha)*young : 1e13 ;
+  double young_t = 1.e2 ;
+  if(t>=t_init){ young_t = YModFrac(alpha)*young ;}
+  else if( 10*trunc(t/10.0)+20 < t_init ){
+    young_t = 1e12;
+  }
 
   elasty  = Element_FindMaterialData(el,Elasticity_t,"Elasticity") ;
   Elasticity_SetParameters(elasty,young_t,poisson) ;
@@ -381,7 +409,6 @@ int  ComputeLoads(Element_t* el,double t,double dt,Load_t* cg,double* r)
 
   FEM_t* fem ;
 
-  #pragma omp critical
   fem = FEM_GetInstance(el) ;
 
   {
@@ -424,7 +451,6 @@ int ComputeInitialState(Element_t* el,double t)
 
 
   /* Pre-initialization */
-  //#pragma omp parallel for
   for(p = 0 ; p < NbOfIntPoints ; p++) {
     /* storage in v0 */
     {
@@ -443,7 +469,6 @@ int ComputeInitialState(Element_t* el,double t)
 
 
   /* If there are initial displacements */
-  #pragma omp parallel for
   for(p = 0 ; p < NbOfIntPoints ; p++) {
     /* Variables */
     double* x = ComputeVariables(el,u,u,vim0,t,0,p) ;
@@ -495,7 +520,6 @@ int  ComputeImplicitTerms(Element_t* el,double t,double dt)
   GetProperties(el,t) ;
 
   /* Loop on integration points */
-  //#pragma omp parallel for
   for(p = 0 ; p < NbOfIntPoints ; p++) {
     /* Variables */
     double* x = ComputeVariables(el,u,u_n,vim_n,t,dt,p) ;
@@ -550,7 +574,6 @@ int  ComputeMatrix(Element_t* el,double t,double dt,double* k)
     //double* kp = FEM_ComputeElasticMatrix(fem,intfct,c,dec) ;
     double* kp = FEM_ComputeElasticMatrix(fem,intfct,cijkl,0) ;
 
-    #pragma omp parallel for
     for(i = 0 ; i < ndof*ndof ; i++) {
       k[i] = kp[i] ;
     }
@@ -586,7 +609,6 @@ int  ComputeResidu(Element_t* el,double t,double dt,double* r)
   {
     double* rw = FEM_ComputeStrainWorkResidu(fem,intfct,SIG,NVI) ;
 
-    //#pragma omp parallel for
     for(i = 0 ; i < nn ; i++) {
       int j ;
       for(j = 0 ; j < dim ; j++) R(i,E_mec + j) -= rw[i*dim + j] ;
@@ -597,7 +619,6 @@ int  ComputeResidu(Element_t* el,double t,double dt,double* r)
   {
     double* rbf = FEM_ComputeBodyForceResidu(fem,intfct,F_MASS + dim - 1,NVI) ;
 
-    //#pragma omp parallel for
     for(i = 0 ; i < nn ; i++) R(i,E_mec + dim - 1) -= -rbf[i] ;
   }
 
@@ -612,7 +633,7 @@ int  ComputeResidu(Element_t* el,double t,double dt,double* r)
 int  ComputeOutputs(Element_t* el,double t,double* s,Result_t* r)
 /** Compute the outputs (r) */
 {
-  int NbOfOutputs = 4 ;
+  int NbOfOutputs = 6 ;
   double* vim0 = Element_GetCurrentImplicitTerm(el) ;
   double** u  = Element_ComputePointerToCurrentNodalUnknowns(el) ;
   IntFct_t*  intfct = Element_GetIntFct(el) ;
@@ -629,8 +650,14 @@ int  ComputeOutputs(Element_t* el,double t,double* s,Result_t* r)
 
   double alpha = HydrDeg(t-t_init) ;
   double young = Element_GetPropertyValue(el,"young") ;
-  double young_t = (t >= t_init) ? alpha*young : 0 ;
+  double young_t = 0;
+  if(t >= t_init){ young_t = YModFrac(alpha)*young; }
+  else if( 10*trunc(t/10.0) + 20 < t_init ){ young_t = 1e12; }
+  double phi_t = (t >= t_init) ? Phi(alpha) : 0 ;
+  double C_t = (t >= t_init) ? Cohes(alpha) : 0 ;
   double* modulus = &young_t ;
+  double* cohesion = &C_t ;
+  double* InternalFrictionAngle = &phi_t ;
 
   {
     /* Interpolation functions at s */
@@ -671,7 +698,9 @@ int  ComputeOutputs(Element_t* el,double t,double* s,Result_t* r)
     Result_Store(r + i++,dis_tot ,"Displacements",3) ;
     Result_Store(r + i++,sig ,"Stresses",9) ;
     Result_Store(r + i++,dis,"Perturbated-displacements",3) ;
-    Result_Store(r + i++,modulus,"Young Modulus",3) ;
+    Result_Store(r + i++,modulus,"Young Modulus",1) ;
+    Result_Store(r + i++,cohesion,"Cohesion",1) ;
+    Result_Store(r + i++,InternalFrictionAngle,"Internal Friction Angle",1) ;
 
     if(i != NbOfOutputs) arret("ComputeOutputs") ;
   }

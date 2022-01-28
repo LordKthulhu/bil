@@ -72,6 +72,7 @@ int calcul(DataSet_t* jdd)
       //Mesh_SetMatrixRowColumnIndexes(mesh,bconds) ;
     }
   /* Print */
+
     {
       Options_t* options = DataSet_GetOptions(jdd) ;
       char*   debug  = Options_GetPrintedInfos(options) ;
@@ -90,6 +91,7 @@ int calcul(DataSet_t* jdd)
     }
 
   /* 2. Calculation */
+
     {
       char*   filename = DataFile_GetFileName(datafile) ;
       Dates_t*  dates    = DataSet_GetDates(jdd) ;
@@ -127,30 +129,26 @@ int calcul(DataSet_t* jdd)
 
 int ComputeInitialState(Mesh_t* mesh,double t)
 {
-  printf("InitState\n") ;
+
   unsigned int n_el = Mesh_GetNbOfElements(mesh) ;
   Element_t* el = Mesh_GetElement(mesh) ;
   unsigned int    ie ;
   int out = 0 ;
 
-  omp_set_num_threads(4);
-  #pragma omp parallel for
   for(ie = 0 ; ie < n_el ; ie++) {
-    #pragma omp cancellation point for
     Material_t* mat = Element_GetMaterial(el + ie) ;
 
     if(mat) {
       int i ;
-      printf("Current element : %d\n",ie+1);
-      #pragma omp critical
+
       Element_FreeBuffer(el + ie) ;
-      #pragma omp critical
+
       i = Element_ComputeInitialState(el + ie,t) ;
       if(i != 0){
-        #pragma omp cancel for
         out = i ;
       }
     }
+
   }
 
   return(out) ;
@@ -159,16 +157,12 @@ int ComputeInitialState(Mesh_t* mesh,double t)
 
 int ComputeExplicitTerms(Mesh_t* mesh,double t)
 {
-  printf("Explicit\n") ;
   unsigned int n_el = Mesh_GetNbOfElements(mesh) ;
   Element_t* el = Mesh_GetElement(mesh) ;
   unsigned int    ie ;
   int out = 0 ;
 
-  omp_set_num_threads(4);
-  #pragma omp parallel for
   for(ie = 0 ; ie < n_el ; ie++) {
-    #pragma omp cancellation point for
     Material_t* mat = Element_GetMaterial(el + ie) ;
 
     if(mat) {
@@ -178,7 +172,6 @@ int ComputeExplicitTerms(Mesh_t* mesh,double t)
 
       i = Element_ComputeExplicitTerms(el + ie,t) ;
       if(i != 0){
-        #pragma omp cancel for
         out = i ;
       }
     }
@@ -190,7 +183,6 @@ int ComputeExplicitTerms(Mesh_t* mesh,double t)
 
 int ComputeMatrix(Mesh_t* mesh,double t,double dt,Matrix_t* a)
 {
-  printf("Matrix\n") ;
   unsigned int n_el = Mesh_GetNbOfElements(mesh) ;
   Element_t* el = Mesh_GetElement(mesh) ;
   unsigned int    ie ;
@@ -198,10 +190,7 @@ int ComputeMatrix(Mesh_t* mesh,double t,double dt,Matrix_t* a)
 
   Matrix_SetValuesToZero(a) ;
 
-  omp_set_num_threads(4);
-  #pragma omp parallel for
   for(ie = 0 ; ie < n_el ; ie++) {
-    #pragma omp cancellation point for
     Material_t* mat = Element_GetMaterial(el + ie) ;
 
     if(mat) {
@@ -209,17 +198,13 @@ int ComputeMatrix(Mesh_t* mesh,double t,double dt,Matrix_t* a)
       double ke[Element_MaxNbOfNodes*Model_MaxNbOfEquations*Element_MaxNbOfNodes*Model_MaxNbOfEquations] ;
       int    i ;
 
-      #pragma omp critical
       Element_FreeBuffer(el + ie) ;
 
-      #pragma omp critical
       i = Element_ComputeMatrix(el + ie,t,dt,ke) ;
       if(i != 0){
-        #pragma omp cancel for
         out = i ;
       }
 
-      #pragma omp critical
       Matrix_AssembleElementMatrix(a,el+ie,ke) ;
     }
   }
@@ -232,7 +217,6 @@ int ComputeMatrix(Mesh_t* mesh,double t,double dt,Matrix_t* a)
 
 void ComputeResidu(Mesh_t* mesh,double t,double dt,Residu_t* r,Loads_t* loads)
 {
-  printf("Residu\n") ;
   unsigned int n_el = Mesh_GetNbOfElements(mesh) ;
   Element_t* el = Mesh_GetElement(mesh) ;
 
@@ -242,7 +226,6 @@ void ComputeResidu(Mesh_t* mesh,double t,double dt,Residu_t* r,Loads_t* loads)
   {
     unsigned int ie ;
 
-    #pragma omp parallel for
     for(ie = 0 ; ie < n_el ; ie++) {
       Material_t* mat = Element_GetMaterial(el + ie) ;
 
@@ -269,7 +252,6 @@ void ComputeResidu(Mesh_t* mesh,double t,double dt,Residu_t* r,Loads_t* loads)
       int reg_cg = Load_GetRegionIndex(cg + i_cg) ;
       unsigned int ie ;
 
-      #pragma omp parallel for
       for(ie = 0 ; ie < n_el ; ie++) {
         if(Element_GetRegionIndex(el + ie) == reg_cg) {
           Material_t* mat = Element_GetMaterial(el + ie) ;
@@ -293,28 +275,21 @@ void ComputeResidu(Mesh_t* mesh,double t,double dt,Residu_t* r,Loads_t* loads)
 
 int ComputeImplicitTerms(Mesh_t* mesh,double t,double dt)
 {
-  printf("Implicit\n") ;
   unsigned int n_el = Mesh_GetNbOfElements(mesh) ;
   Element_t* el = Mesh_GetElement(mesh) ;
   unsigned int    ie ;
   int out = 0 ;
 
-  omp_set_num_threads(1) ;
-
-  #pragma omp parallel for
   for(ie = 0 ; ie < n_el ; ie++) {
-    #pragma omp cancellation point for
     Material_t* mat = Element_GetMaterial(el + ie) ;
 
     if(mat) {
       int    i ;
 
-      #pragma omp critical
       Element_FreeBuffer(el + ie) ;
 
       i = Element_ComputeImplicitTerms(el + ie,t,dt) ;
       if(i != 0){
-        #pragma omp cancel for
         out = i ;
       }
     }
@@ -363,6 +338,7 @@ int   Algorithm(DataSet_t* jdd,Solutions_t* sols,Solver_t* solver,OutputFiles_t*
 
 
   {
+
     int i = Mesh_LoadCurrentSolution(mesh,datafile,&T_1) ;
 
     idate = 0 ;
@@ -389,6 +365,7 @@ int   Algorithm(DataSet_t* jdd,Solutions_t* sols,Solver_t* solver,OutputFiles_t*
       IConds_AssignInitialConditions(iconds,mesh,T_1) ;
 
       ComputeInitialState(mesh,T_1) ;
+
     }
   }
 
@@ -404,6 +381,7 @@ int   Algorithm(DataSet_t* jdd,Solutions_t* sols,Solver_t* solver,OutputFiles_t*
   /*
    * 3. Loop on dates
    */
+
   for(; idate < nbofdates - 1 ; idate++) {
     Date_t* date_i = date + idate ;
 

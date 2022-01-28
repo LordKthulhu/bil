@@ -121,7 +121,6 @@ FEM_t*  (FEM_GetInstance)(Element_t* el)
   GenericData_t* gdat = Session_FindGenericData(FEM_t,"FEM") ;
 
   if(!gdat) {
-    printf("henlo\n") ;
     FEM_t* fem = FEM_Create() ;
 
     gdat = GenericData_Create(1,fem,FEM_t,"FEM") ;
